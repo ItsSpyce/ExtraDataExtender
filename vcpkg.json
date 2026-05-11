@@ -1,0 +1,13 @@
+{
+  "name": "commonlibsse-ng-template",
+  "version-string": "0.0.1",
+  "dependencies": [
+    "fmt",
+    "spdlog",
+    "simpleini",
+    "catch2",
+    "rapidcsv",
+    "rsm-binary-io",
+    "directxtk"
+  ]
+}

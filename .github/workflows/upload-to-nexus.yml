@@ -1,0 +1,14 @@
+name: Upload to Nexus
+on:
+  main:
+    types: [published]
+
+jobs:
+  upload-to-nexusmods:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Build CMake project
+        runs: cmake -B build &&
