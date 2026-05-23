@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(commonlibsse-ng-template VERSION 1.0.0)
+project(ExtraDataExtender VERSION 1.0.0)
 
 set(CMAKE_LIB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_LIB_DIR}/cmake")
@@ -44,7 +44,7 @@ add_subdirectory(${CommonLibPath} EXCLUDE_FROM_ALL)
 
 find_package(spdlog CONFIG REQUIRED)
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src)
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "src/*.*")
 
 add_commonlibsse_plugin(${PROJECT_NAME} SOURCES ${SOURCES})
