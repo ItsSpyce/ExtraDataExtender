@@ -2,3 +2,6 @@
 	path = lib/commonlibsse-ng
 	url = https://github.com/ItsSpyce/CommonLibVR.git
 	branch = ng
+[submodule "lib/emhash"]
+	path = lib/emhash
+	url = https://github.com/ktprime/emhash.git

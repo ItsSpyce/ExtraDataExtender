@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.21)
 project(ExtraDataExtender VERSION 1.0.0)
 
 set(CMAKE_LIB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib)
+set(CMAKE_THIRD_PARTY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third-party)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_LIB_DIR}/cmake")
 
 if(DEFINED ENV{SKYRIM_FOLDER} AND IS_DIRECTORY "$ENV{SKYRIM_FOLDER}/Data")
@@ -26,7 +27,7 @@ set(ENABLE_SKYRIM_SE ON)
 set(ENABLE_SKYRIM_AE ON)
 set(ENABLE_SKYRIM_VR OFF)
 set(BUILD_TESTS OFF)
-
+set(WITH_EXAMPLES OFF)
 
 if(MSVC)
     add_compile_definitions(
@@ -41,16 +42,31 @@ if(MSVC)
 endif()
 
 add_subdirectory(${CommonLibPath} EXCLUDE_FROM_ALL)
+add_subdirectory("${CMAKE_LIB_DIR}/emhash" EXCLUDE_FROM_ALL)
 
 find_package(spdlog CONFIG REQUIRED)
+find_package(imgui CONFIG REQUIRED)
+find_path(SIMPLEINI_INCLUDE_DIRS "ConvertUTF.c")
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src)
+include_directories(
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ${SIMPLEINI_INCLUDE_DIRS}
+  ${CMAKE_THIRD_PARTY_DIR}
+
+)
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "src/*.*")
+file(GLOB_RECURSE LMDB_SOURCES CONFIGURE_DEPENDS "${CMAKE_THIRD_PARTY_DIR}/lmdb-safe/*.cc")
 
-add_commonlibsse_plugin(${PROJECT_NAME} SOURCES ${SOURCES})
-target_precompile_headers(${PROJECT_NAME} PRIVATE src/pch.h)
+add_commonlibsse_plugin(${PROJECT_NAME} SOURCES ${SOURCES} ${LMDB_SAFE_SOURCES})
+target_precompile_headers(${PROJECT_NAME} PRIVATE src/PCH.h)
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)
-target_link_libraries(${PROJECT_NAME} PRIVATE spdlog::spdlog)
+target_link_libraries(${PROJECT_NAME} PRIVATE
+  spdlog::spdlog
+  imgui::imgui
+  lmdb-safe
+  emhash
+)
 
 
 # When your SKSE .dll is compiled, this will automatically copy the .dll into your mods folder.
