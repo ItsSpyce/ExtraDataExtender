@@ -1,68 +1,61 @@
 #pragma once
 
-#include <any>
+#include <type_traits>
 
 namespace ExtraDataExtender {
 typedef uint32_t EDE_TYPE;
 typedef uint8_t EDE_VERSION;
 
-class EDESaveData {
+namespace internal {
+enum VariableKind {
+  kScalar,
+  kArray,
+  kStruct,
+};
+
+struct VariableDefinition {
+  VariableKind kind;
+  void* binding;
+};
+}  // namespace internal
+
+template <class ExtraDataStruct>
+class BindingContext;
+
+class ExtraDataConstructor {
  public:
-  virtual bool Write(const std::string& field, const std::any& value) = 0;
-  virtual std::any Read(const std::string& field) = 0;
-  virtual bool Contains(const std::string& field) = 0;
-
-  // helpers
-
-  template <typename Enum, typename U = std::underlying_type_t<Enum>>
-  bool Write(const std::string& field, REX::EnumSet<Enum, U> enumSet) {
-    return Write(field, enumSet.underlying());
-  }
-
-  // collections
-  template <typename T>
-  bool WriteVector(const std::string& field, const std::vector<T>& values) {
-    if (!Write(field + "_len", values.size())) {
-      return false;
-    }
-    for (size_t i = 0; i < values.size(); ++i) {
-      if (!Write(field + "_" + std::to_string(i), values[i])) {
-        return false;
-      }
-    }
-    return true;
-  }
-
-  template <typename T>
-  std::vector<T> ReadVector(const std::string& field) {
-    std::vector<T> result;
-    if (const auto length = Read(field + "_len"); length.type() == typeid(size_t)) {
-      const auto size = std::any_cast<size_t>(length);
-      result.resize(size);
-      for (size_t i = 0; i < size; ++i) {
-        result[i] = Read(field + "_" + std::to_string(i));
-      }
-    }
-    return result;
+  template <class ExtraDataStruct>
+  BindingContext<ExtraDataStruct> create_context(const std::string& name) {
+    return BindingContext<ExtraDataStruct>{name};
   }
 };
 
-// this is a copy of BSExtraData for familiarity
-class EDEExtraData {
+template <typename T>
+concept is_extradata = requires(T) {
+  std::is_trivially_constructible_v<T>;
+  { T::bind(ExtraDataConstructor{}) } -> void;
+};
+
+template <class ExtraDataStruct>
+class BindingContext {
  public:
-  EDEExtraData() = default;
-  virtual ~EDEExtraData() = default;
+  BindingContext(const std::string& name) : name_(name) {}
 
-  [[nodiscard]] virtual EDE_TYPE GetType() const = 0;
-  virtual bool IsNotEqual(const EDEExtraData* rh) const { return false; }
+  template <typename Member>
+  void bind(const std::string& name, Member ExtraDataStruct::* memberObjectPtr) {
+    if constexpr (std::is_array_v<Member>) {
+      create_variable(name, internal::VariableDefinition{.kind = internal::kArray, .binding = memberObjectPtr });
+    } else if constexpr (std::is_integral_v<Member>) {
+      
+    } else if constexpr (std::is_same_v<std::string, Member>) {
+      
+    }
+  }
 
-  bool operator==(const EDEExtraData& rh) const { return !IsNotEqual(&rh); }
-
-  bool operator!=(const EDEExtraData& rh) const { return IsNotEqual(&rh); }
-
-  // Add
-  virtual bool Save(EDESaveData& saveData) const = 0;
-  virtual bool Load(const EDESaveData& saveData) = 0;
+ private:
+  std::string name_;
+  void create_variable(const std::string& name,
+            const internal::VariableDefinition& definition);
 };
 
 class IPluginInterface {
@@ -82,36 +75,17 @@ class EDEPluginInterfaceV1 : public IPluginInterface {
   static constexpr auto VERSION = v1;
   EDE_VERSION GetVersion() const override { return VERSION; }
 
-  virtual EDEExtraData* Add(RE::ExtraDataList* _this, EDEExtraData* toAdd);
-  virtual bool HasType(RE::ExtraDataList* _this, EDE_TYPE type);
-  virtual EDEExtraData* GetByType(RE::ExtraDataList* _this, EDE_TYPE type);
-  virtual bool Remove(RE::ExtraDataList* _this, EDEExtraData* toRemove);
-  virtual bool RemoveByType(RE::ExtraDataList* _this, EDE_TYPE type);
+  template <is_extradata ExtraDataStruct>
+  void RegisterType();
 
-  // template helpers
-  template <class T>
-    requires(std::is_assignable_v<EDEExtraData, T>)
-  T* Add(RE::ExtraDataList* _this, T* toAdd) {
-    return (T*)Add(_this, T::TYPE, toAdd);
-  }
+  template <is_extradata ExtraDataStruct>
+  bool HasExtraData(RE::TESObjectREFR* refr);
 
-  template <class T>
-    requires(std::is_assignable_v<EDEExtraData, T>)
-  bool HasType(RE::ExtraDataList* _this) {
-    return HasType(_this, T::TYPE);
-  }
+  template <is_extradata ExtraDataStruct>
+  void AddExtraData(RE::TESObjectREFR* refr, const ExtraDataStruct& data);
 
-  template <class T>
-    requires(std::is_assignable_v<EDEExtraData, T>)
-  T* GetByType(RE::ExtraDataList* _this) {
-    return GetByType(_this, T::TYPE);
-  }
-
-  template <class T>
-    requires(std::is_assignable_v<EDEExtraData, T>)
-  bool RemoveByType(RE::ExtraDataList* _this) {
-    return RemoveByType(_this, T::TYPE);
-  }
+  template <is_extradata ExtraDataStruct>
+  void UpdateExtraData(RE::TESObjectREFR* refr, const ExtraDataStruct& data);
 };
 
 template <typename VersionedInterface>
@@ -121,8 +95,8 @@ VersionedInterface* Query() {
   static bool didError = false;
   if (!iface && !didError) {
     if (const auto handle = GetModuleHandleW(L"ExtraDataExtender.dll")) {
-      if (const auto queryFn =
-              (void* (*)())GetProcAddress(handle, "QueryPluginInterface")) {
+      if (const auto queryFn = reinterpret_cast<void* (*)()>(
+              GetProcAddress(handle, "QueryPluginInterface"))) {
         iface = static_cast<VersionedInterface*>(queryFn());
         const auto installedVersion = iface->GetVersion();
         if (installedVersion < VersionedInterface::VERSION) {

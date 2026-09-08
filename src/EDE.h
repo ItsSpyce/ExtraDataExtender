@@ -1,5 +1,6 @@
 #pragma once
-#include "EDE_Impl.h"
+
+#include "PluginInterfaceImpl.h"
 #include "REX/REX/Singleton.h"
 
 class EDE : public REX::Singleton<EDE> {

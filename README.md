@@ -1,51 +1,49 @@
-# CommonLibSSE-NG Plugin Template
+# ExtraDataExtender
 
-This is a basic plugin template using CommonLibSSE-NG.
+> A Skyrim mod for adding save-scoped data to references or inventory items.
 
-### Requirements
-* [XMake](https://xmake.io) [3.0.0+]
-* C++23 Compiler (MSVC, Clang-CL)
+## Usage
 
-## Getting Started
-```bat
-git clone --recurse-submodules https://github.com/libxse/commonlibsse-ng-template
-cd commonlibsse-ng-template
+0. Install the mod (obviously, but maybe I should state that in plain text)
+1. Copy `include/EDE_API.h` into your project
+2. In your plugin startup (preferrably post `kDataLoaded`), call `ExtraDataExtender::Query()` to ensure EDE exists
+
+```cpp
+#include <EDE_API.h>
+
+namespace {
+struct MyExtraData {
+  std::string foo;
+  int answerToLife;
+};
+
+// more shit
+ExtraDataExtender::EDEPluginInterfaceV1* ede;
+
+static void OnMessage(SKSE::MessagingInterface::Message* msg) {
+  if (msg->type == SKSE::MessagingInterface::kDataLoaded) {
+    ede = ExtraDataExtender::Query();
+    ede->RegisterType<MyExtraData>();
+  } else if (msg->type == SKSE::MessagingInterface::kNewGame) {
+    ede->AddExtraData(RE::PlayerCharacter::GetSingleton(), MyExtraData{
+      .foo = "bar",
+      .answerToLife = 42,
+    });
+  }
+}
+}
 ```
 
-### Build
-To build the project, run the following command:
-```bat
-xmake build
-```
+## Extra data requirements
 
-> ***Note:*** *This will generate a `build/windows/` directory in the **project's root directory** with the build output.*
+1. The only valid data types are `scalar`, `array`, or `struct`. Any complex types that require inference are not supported.
+2. Each field is to be verbosely defined in the struct's `bind` method.
+3. An extra data kind MUST be trivial to construct. This is by design to permit reflected bindings. 
 
+## Functions
 
-### Build Output (Optional)
-If you want to redirect the build output, set one of the following environment variables:
+### V1
 
-- Path to a Mod Manager mods folder: `XSE_TES5_MODS_PATH`
+#### `RegisterType<T>`
 
-  or
-
-- Path to a Skyrim install folder: `XSE_TES5_GAME_PATH`
-
-**Alternatively**, use the [set_installdir](https://xmake.io/api/description/project-target.html#set-installdir) api to set a specific install path instead, either globally or per target. By default, your plugin `.dll` and `.pdb` are included, but you can *add* more files to be installed by using the [add_installfiles](https://xmake.io/api/description/project-target.html#add-installfiles) api.
-
-### Project Generation (Optional)
-If you use Visual Studio, run the following command:
-```bat
-xmake project -k vsxmake
-```
-
-> ***Note:*** *This will generate a `vsxmakeXXXX/` directory in the **project's root directory** using the latest version of Visual Studio installed on the system.*
-
-**Alternatively**, if you do not use Visual Studio, you can generate a `compile_commands.json` file for use with a laguage server like clangd in any code editor that supports it, like vscode:
-```bat
-xmake project -k compile_commands
-```
-
-> ***Note:*** *You must have a language server extension installed to make use of this file. I recommend `clangd`. Do not have more than one installed at a time as they will conflict with each other. I also recommend installing the `xmake` extension if available to make building the project easier.*
-
-## Documentation
-Please refer to the [Wiki](../../wiki/Home) for more advanced topics.
+Registers an extra data type to be persisted.
