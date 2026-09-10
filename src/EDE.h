@@ -1,5 +1,6 @@
 #pragma once
-#include "EDE_Impl.h"
+
+#include "PluginInterfaceImpl.h"
 #include "REX/REX/Singleton.h"
 
 class EDE : public REX::Singleton<EDE> {
@@ -11,11 +12,15 @@ class EDE : public REX::Singleton<EDE> {
     return *interface_;
   }
 
-  void Initialize() {
-    // TODO:
+  static void Initialize() {
+    SKSE::GetSerializationInterface()->SetLoadCallback(OnLoad);
+    SKSE::GetSerializationInterface()->SetSaveCallback(OnSave);
   }
 
+  static void OnLoad(SKSE::SerializationInterface* save) {}
+
+  static void OnSave(SKSE::SerializationInterface* save) {}
+
  private:
-  ExtraDataExtender::PluginInterfaceImpl* interface_ =
-      new ExtraDataExtender::PluginInterfaceImpl();
+  auto* interface_ = new ExtraDataExtender::PluginInterfaceImpl();
 };

@@ -11,4 +11,5 @@ namespace logger = SKSE::log;
 using namespace std::literals;
 
 #define fn auto
+#define EDE_NAMESPACE namespace ExtraDataExtender
 

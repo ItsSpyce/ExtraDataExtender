@@ -1,51 +1,80 @@
-# CommonLibSSE-NG Plugin Template
+# Extra Data Extender
 
-This is a basic plugin template using CommonLibSSE-NG.
+An SKSE mod for adding extra data to references/items.
 
-### Requirements
-* [XMake](https://xmake.io) [3.0.0+]
-* C++23 Compiler (MSVC, Clang-CL)
+## Architecture
 
-## Getting Started
-```bat
-git clone --recurse-submodules https://github.com/libxse/commonlibsse-ng-template
-cd commonlibsse-ng-template
+- Inventory items are assigned a unique ID that persists in the actual extra data
+  - weapons get ExtraHealth
+  - armors get ExtraEnchantment
+- References are simply tied to a unique ID in the SKSE cosave
+- All extra data is stored as a key-value pair of `EDEExtraData::GetType` and a serializable dictionary in LMDB
+- When a save is loaded, all UID<->extra-data-dictionary will be stored in memory
+- When a reference is loaded/initialized/actually gets work done on it, the extra data for that will be stored on a hot plate for being worked on
+
+> Loading data
+
+```mermaid
+sequenceDiagram
+  participant cosave as SKSE Cosave
+  participant ede as ExtraDataExtender
+  participant lmdb as LMDB
+  participant refr as TESObjectREFR
+
+  cosave->>ede: load all uniqueID-to-refID mappings and cosave GUID
+  ede->>lmdb: get LMDB table matching cosave GUID
+  lmdb->>ede: table ref, locked until next save
 ```
 
-### Build
-To build the project, run the following command:
-```bat
-xmake build
+> Getting data
+
+```mermaid
+sequenceDiagram
+  participant query as Query Reference Data
+  participant ede as ExtraDataExtender
+  participant hp as Hot Plate
+  participant lmdb as LMDB
+
+  query->>ede: fetch unique ID for refr if it exists
+  ede->>hp: check hot-plate for unique ID entries
+  hp->>ede: returns data if exists
+  ede->>lmdb: double-back to LMDB for data
+  lmdb->>ede: return all extra data records
+  ede->>lmdb: if Actor, iterate over inventory items
+  lmdb->>ede: returns item extra data, storing in hot-plate
+  ede->>hp: insert into hot plate
+  ede->>query: return data
 ```
 
-> ***Note:*** *This will generate a `build/windows/` directory in the **project's root directory** with the build output.*
+> Unloading data
 
+```mermaid
+sequenceDiagram
+  participant unload as Unload Reference Data
+  participant ede as ExtraDataExtender
+  participant hot as Hot Plate
+  participant lmdb as LMDB
 
-### Build Output (Optional)
-If you want to redirect the build output, set one of the following environment variables:
-
-- Path to a Mod Manager mods folder: `XSE_TES5_MODS_PATH`
-
-  or
-
-- Path to a Skyrim install folder: `XSE_TES5_GAME_PATH`
-
-**Alternatively**, use the [set_installdir](https://xmake.io/api/description/project-target.html#set-installdir) api to set a specific install path instead, either globally or per target. By default, your plugin `.dll` and `.pdb` are included, but you can *add* more files to be installed by using the [add_installfiles](https://xmake.io/api/description/project-target.html#add-installfiles) api.
-
-### Project Generation (Optional)
-If you use Visual Studio, run the following command:
-```bat
-xmake project -k vsxmake
+  unload->>ede: request refr unload
+  ede->>hot: get all hot-plate data
+  hot->>ede: return hot-plate data and store in cold-plate
+  hot->>unload: success boolean
 ```
 
-> ***Note:*** *This will generate a `vsxmakeXXXX/` directory in the **project's root directory** using the latest version of Visual Studio installed on the system.*
+> Saving data
 
-**Alternatively**, if you do not use Visual Studio, you can generate a `compile_commands.json` file for use with a laguage server like clangd in any code editor that supports it, like vscode:
-```bat
-xmake project -k compile_commands
+```mermaid
+sequenceDiagram
+  participant skse as SKSE Cosave
+  participant ede as ExtraDataExtender
+  participant hot as Hot Plate
+  participant cld as Cold Plate
+  participant lmdb as LMDB
+
+  skse->>ede: request save
+  ede->>hot: fetch hot-plate data
+  ede->>cld: fetch cold-plate data
+  ede->>lmdb: clone previous table with new GUID then INSERT/UPDATE all records
+  ede->>cld: clear cold-plate
+  ede->>skse: write to cosave buffer
 ```
-
-> ***Note:*** *You must have a language server extension installed to make use of this file. I recommend `clangd`. Do not have more than one installed at a time as they will conflict with each other. I also recommend installing the `xmake` extension if available to make building the project easier.*
-
-## Documentation
-Please refer to the [Wiki](../../wiki/Home) for more advanced topics.

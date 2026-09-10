@@ -2,7 +2,7 @@
 
 #include "EDE_API.h"
 
-namespace ExtraDataExtender {
+EDE_NAMESPACE {
 class PluginInterfaceImpl : public EDEPluginInterfaceV1 {
  public:
   enum ExtraDataKind : uint8_t {
@@ -32,7 +32,7 @@ class PluginInterfaceImpl : public EDEPluginInterfaceV1 {
     bool Contains(const std::string& field) override;
 
    private:
-    std::map<std::string, ExtraDataRecord> records_;
+    std::unordered_map<std::string, ExtraDataRecord> records_;
   };
 
   PluginInterfaceImpl() = default;

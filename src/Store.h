@@ -3,7 +3,6 @@
 #include <emhash/hash_table7.hpp>
 #include <emilib/emihmap2.hpp>
 #include <emhash/hash_table8.hpp>
-#include <lmdb-safe/lmdb-safe.hh>
 
 #include "PluginInterfaceImpl.h"
 #include "STL.h"
@@ -42,7 +41,6 @@ class Store : public stl::Singleton<Store>,
   Lock lock_;
   std::unique_ptr<CosaveData> cosaveData_;
   emilib2::HashMap<UniversalID, Record> loaded_;
-  std::shared_ptr<MDBEnv> lmdbEnv_ = std::shared_ptr<MDBEnv>();
 
   UniversalID GetID(RE::TESObjectREFR* refr, bool init = false) const;
   UniversalID GetID(RE::InventoryEntryData* invData, bool init = false);

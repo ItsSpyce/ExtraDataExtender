@@ -1,7 +1,7 @@
 #pragma once
 #include "STL.h"
 
-namespace ExtraDataExtender::Hooks {
+EDE_NAMESPACE::Hooks {
 struct TESObjectREFR_Load3D {
   static RE::NiAVObject* thunk(RE::TESObjectREFR* _this, bool a_arg1);
   static inline REL::Relocation<decltype(&thunk)> func;
