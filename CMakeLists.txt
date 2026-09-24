@@ -2,9 +2,18 @@ cmake_minimum_required(VERSION 3.21)
 
 project(ExtraDataExtender VERSION 1.0.0)
 
+find_package(unofficial-lmdb CONFIG REQUIRED)
+find_package(Threads REQUIRED)
+find_package(fmt CONFIG REQUIRED)
+
 set(CMAKE_LIB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib)
 set(CMAKE_THIRD_PARTY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third-party)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_LIB_DIR}/cmake")
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+
+include(CPM)
+
+CPMAddPackage("gh:stephenberry/glaze@8.3.0")
 
 if(DEFINED ENV{SKYRIM_FOLDER} AND IS_DIRECTORY "$ENV{SKYRIM_FOLDER}/Data")
     set(OUTPUT_FOLDER "$ENV{SKYRIM_FOLDER}/Data")
@@ -21,7 +30,7 @@ set(CommonLibName "CommonLibSSE")
 set(GameVersion "Skyrim")
 include(${CommonLibPath}/cmake/CommonLibSSE.cmake)
 
-set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>" CACHE STRING "")
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL" CACHE STRING "")
 
 set(ENABLE_SKYRIM_SE ON)
 set(ENABLE_SKYRIM_AE ON)
@@ -47,31 +56,31 @@ add_subdirectory("${CMAKE_LIB_DIR}/emhash" EXCLUDE_FROM_ALL)
 find_package(spdlog CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
 find_path(SIMPLEINI_INCLUDE_DIRS "ConvertUTF.c")
+find_package(unofficial-lmdb CONFIG REQUIRED)
 
 include_directories(
   ${CMAKE_CURRENT_SOURCE_DIR}/include
   ${CMAKE_CURRENT_SOURCE_DIR}/src
   ${SIMPLEINI_INCLUDE_DIRS}
-  ${CMAKE_THIRD_PARTY_DIR}
 
 )
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "src/*.*")
-file(GLOB_RECURSE LMDB_SOURCES CONFIGURE_DEPENDS "${CMAKE_THIRD_PARTY_DIR}/lmdb-safe/*.cc")
 
-add_commonlibsse_plugin(${PROJECT_NAME} SOURCES ${SOURCES} ${LMDB_SAFE_SOURCES})
+add_commonlibsse_plugin(${PROJECT_NAME} SOURCES ${SOURCES})
 target_precompile_headers(${PROJECT_NAME} PRIVATE src/PCH.h)
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)
 target_link_libraries(${PROJECT_NAME} PRIVATE
   spdlog::spdlog
   imgui::imgui
-  lmdb-safe
   emhash
+  glaze::glaze
+  unofficial::lmdb::lmdb
 )
 
 
 # When your SKSE .dll is compiled, this will automatically copy the .dll into your mods folder.
 # Only works if you configure DEPLOY_ROOT above (or set the SKYRIM_MODS_FOLDER environment variable)
-if(DEFINED OUTPUT_FOLDER)
+if(DEFINED OUTPUT_FOLDER )
     # If you specify an <OUTPUT_FOLDER> (including via environment variables)
     # then we'll copy your mod files into Skyrim or a mod manager for you!
 
