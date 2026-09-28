@@ -1,6 +1,5 @@
 #pragma once
 
-#include <emhash/hash_set4.hpp>
 #include <emhash/hash_table7.hpp>
 
 #include "Helpers.h"
@@ -126,7 +125,8 @@ class IDSolver {
       dirty_ = true;
       return Ok{};
     }
-    return Err{Err_NotFound, "Item not found with ID {}", from};
+    return Err{Err_NotFound, "Item not found with ID {} - {}", from.first,
+               from.second};
   }
 
   result<void> PickupReference(RE::FormID refr, NativeKey to, RE::FormID obj) {
@@ -217,7 +217,7 @@ class IDSolver {
 
   void LoadReference(RE::FormID form) {
     if (refs_.contains(form)) {
-      loaded_.emplace_unique(form);
+      loaded_.emplace(form, std::set<uid_t>{});
     }
   }
 
@@ -373,7 +373,7 @@ class IDSolver {
   uid_t next_ = 1;
   emhash7::HashMap<RE::FormID, UniqueRecord> refs_;
   emhash7::HashMap<RE::FormID, std::set<uid_t>> loaded_;
-  emhash4::HashSet<uid_t> owners_;
+  std::set<uid_t> owners_;
   std::map<NativeKey, UniqueRecord> items_;
   bool dirty_ = false;
 };
@@ -412,4 +412,4 @@ result<uid_t> ParseUniqueID(const RE::TESObjectREFR* owner,
                             const RE::ExtraDataList* stack);
 result<uid_t> ParseUniqueID(const RE::TESObjectREFR* owner,
                             const RE::ExtraDataList* stack);
-}  // namespace ExtraDataExtender::UniqueID
+}  // namespace ExtraDataExtender

@@ -192,7 +192,7 @@ class Coordinator final : public RE::BSTEventSink<RE::TESUniqueIDChangeEvent>,
     }
     if (const auto committed = state->CommitIDs(); !committed)
       return committed.error();
-    auto store = State::GetSingleton()->GetIDStore();
+    auto& store = State::GetSingleton()->GetIDStore();
     if (processed == 0 && !store.NeedsSync()) return Ok{};
     if (const auto didSync = store.Sync(solver.LoadedIDs()); !didSync)
       return didSync.error();
@@ -549,6 +549,14 @@ class Coordinator final : public RE::BSTEventSink<RE::TESUniqueIDChangeEvent>,
   bool accepting_{}, scheduled_{}, saving_{}, draining_{};
 } g_coordinator{};
 }  // namespace
+
+result<uid_t> IDSolver::Allocate() {
+  if (next_ == std::numeric_limits<uid_t>::max()) {
+    return Err{Err_Generic, "Identity limit reached"};
+  }
+  dirty_ = true;
+  return Ok{next_++};
+}
 
 PickupCtx::PickupCtx(const RE::TESObjectREFR* owner,
                      const RE::TESObjectREFR* world, int32_t amount)

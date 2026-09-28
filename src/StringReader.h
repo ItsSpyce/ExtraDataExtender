@@ -6,15 +6,17 @@ namespace ExtraDataExtender {
 class StringReader {
   friend class StringWriter;
 
-  template <class T> requires std::is_arithmetic_v<T>
+  template <class T> requires std::is_integral_v<T>
   T ReadInteger() {
     CheckSize(sizeof(T));
-    T value{};
+    std::uint64_t value{};
     for (size_t i = 0; i < sizeof(T); ++i) {
-      value |= static_cast<T>(static_cast<unsigned char>(bytes_[position_ + i])) < 8 * i;
-      position_ += sizeof(T);
+      value |= static_cast<std::uint64_t>(
+                   static_cast<unsigned char>(bytes_[position_ + i]))
+               << (8 * i);
     }
-    return value;
+    position_ += sizeof(T);
+    return static_cast<T>(value);
   }
 
   void CheckSize(const size_t length) const {
@@ -60,8 +62,6 @@ public:
   READER(int16_t, ReadShort);
   READER(int32_t, ReadInt);
   READER(int64_t, ReadLong);
-  READER(float, ReadFloat);
-  READER(double, ReadDouble);
 private:
   std::string_view bytes_;
   std::size_t position_ = 0;

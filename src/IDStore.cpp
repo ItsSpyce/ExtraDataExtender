@@ -193,8 +193,8 @@ result<void> IDStore::Write(
       return Err{"Failed to write payload for {} - {}: {}", key.first,
                  key.second, err.what()};
     }
-    if (const auto envelope = TryEncode(
-            Envelope{kinds_[key.second].version, stream.GetBytes()})) {
+    if (const auto envelope = TryEncode(Envelope{
+            kinds_.find(key.second)->second.version, stream.GetBytes()})) {
       mutations.push_back({DB_KEY(key), std::move(envelope).value()});
     } else {
       return envelope.error();
@@ -416,5 +416,6 @@ result<void> IDStore::Reset() {
   owned_.clear();
   values_.clear();
   removeFromActive_.clear();
+  return Ok{};
 }
 }  // namespace ExtraDataExtender

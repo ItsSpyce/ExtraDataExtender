@@ -23,6 +23,13 @@ class IDStore final {
   };
   using Obj = std::unique_ptr<ExtraData, Destructor>;
   using Key = std::pair<uid_t, std::string>;
+  struct KeyHash {
+    std::size_t operator()(const Key& key) const noexcept {
+      const auto first = std::hash<uid_t>{}(key.first);
+      const auto second = std::hash<std::string>{}(key.second);
+      return first ^ (second + 0x9e3779b9 + (first << 6) + (first >> 2));
+    }
+  };
   struct MissingValue {};
   struct PresentValue {};
   struct PersistedValue {
@@ -30,7 +37,7 @@ class IDStore final {
     bool didAttempt = false;
   };
   using Value = stl::better_variant<MissingValue, PresentValue, PersistedValue, Obj>;
-  using ValueMap = emhash8::HashMap<Key, Value>;
+  using ValueMap = emhash8::HashMap<Key, Value, KeyHash>;
 
  public:
   result<void> Register(const char* id, unsigned version, abi::Create ctor,
@@ -49,7 +56,7 @@ class IDStore final {
   bool IsEntered() const { return isEntered_; }
 
  private:
-  emhash8::HashMap<std::string, Kind, std::less<>> kinds_;
+  emhash8::HashMap<std::string, Kind> kinds_;
   ValueMap values_;
   std::unordered_set<ExtraData*> owned_;
   std::set<uid_t> removeFromActive_;

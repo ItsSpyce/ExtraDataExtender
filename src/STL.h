@@ -61,40 +61,41 @@ class better_variant final : public std::variant<_Types...> {
   using inner_type = std::variant<_Types...>;
 
  public:
-  better_variant(inner_type& value) : std::variant<_Types...>(value) {}
+  better_variant(inner_type& value) : inner_type(value) {}
 
   template <class _Ty>
-    requires is_in_variant_v<inner_type, _Ty>
-  constexpr better_variant(_Ty&& value) : std::variant<_Types...>(value) {}
+    requires is_in_variant_v<inner_type, std::remove_cvref_t<_Ty>>
+  constexpr better_variant(_Ty&& value)
+      : inner_type(std::forward<_Ty>(value)) {}
 
   template <class _Ty>
     requires is_in_variant_v<inner_type, _Ty>
   constexpr bool holds_alternative() const noexcept {
-    return std::holds_alternative<_Ty, _Types...>(&this);
+    return std::holds_alternative<_Ty>(static_cast<const inner_type&>(*this));
   }
 
   template <class _Ty>
     requires is_in_variant_v<inner_type, _Ty>
   constexpr decltype(auto) get_if() noexcept {
-    return std::get_if<_Ty, _Types...>(this);
+    return std::get_if<_Ty>(static_cast<inner_type*>(this));
   }
 
   template <class _Ty>
     requires is_in_variant_v<inner_type, _Ty>
   constexpr decltype(auto) get_if() const noexcept {
-    return std::get_if<_Ty, _Types...>(this);
+    return std::get_if<_Ty>(static_cast<const inner_type*>(this));
   }
 
   template <class _Ty>
     requires is_in_variant_v<inner_type, _Ty>
   constexpr decltype(auto) get() noexcept {
-    return std::get<_Ty, _Types...>(&this);
+    return std::get<_Ty>(static_cast<inner_type&>(*this));
   }
 
   template <class _Ty>
     requires is_in_variant_v<inner_type, _Ty>
   constexpr decltype(auto) get() const noexcept {
-    return std::get<_Ty, _Types...>(&this);
+    return std::get<_Ty>(static_cast<const inner_type&>(*this));
   }
 };
 }  // namespace stl
@@ -146,8 +147,10 @@ struct Err {
   Err(std::int32_t code, fmt::format_string<Args...> format, Args&&... args)
       : message(fmt::format(format, std::forward<Args>(args)...)), code(code) {}
 
-  Err(const std::optional<Err>& rhs) : message(rhs->message), code(rhs->code) {}
-  Err(std::optional<Err>& rhs) : message(rhs->message), code(rhs->code) {}
+  Err(const Err&) = default;
+  Err(Err&&) noexcept = default;
+  Err& operator=(const Err&) = default;
+  Err& operator=(Err&&) noexcept = default;
 
   bool IsNone() const noexcept { return code == INT32_MIN; }
 
@@ -198,7 +201,7 @@ class _NODISCARD result {
 
   value_p value_ptr() noexcept { return std::get_if<0>(&data_); }
 
-  const value_p value_ptr() const noexcept { return std::get_if<0>(&data_); }
+  const T* value_ptr() const noexcept { return std::get_if<0>(&data_); }
 
   Err* error_ptr() noexcept { return std::get_if<1>(&data_); }
 
@@ -242,9 +245,9 @@ class _NODISCARD result {
 
   value_lval value() & { return std::get<0>(data_); }
 
-  const value_lval& value() const& { return std::get<0>(data_); }
+  const T& value() const& { return std::get<0>(data_); }
 
-  value_rval&& value() && { return std::get<0>(std::move(data_)); }
+  T&& value() && { return std::get<0>(std::move(data_)); }
 
   Err& error() & { return std::get<1>(data_); }
 
@@ -288,9 +291,11 @@ class _NODISCARD result {
     return other;
   }
 
-  constexpr const T* operator->() const noexcept { return value(); }
+  constexpr const T* operator->() const noexcept {
+    return std::addressof(value());
+  }
 
-  constexpr T* operator->() noexcept { return value(); }
+  constexpr T* operator->() noexcept { return std::addressof(value()); }
 
   constexpr const T& operator*() const& noexcept { return value(); }
 
@@ -346,8 +351,8 @@ class _NODISCARD result<void> {
   }
 
   Err& error() & { return *error_; }
-  const Err& error() const& { return error_; }
-  Err&& error() && { return std::move(error_); }
+  const Err& error() const& { return error_.value(); }
+  Err&& error() && { return std::move(error_.value()); }
 
   Err* error_ptr() noexcept { return error_ ? &error_.value() : nullptr; }
   const Err* error_ptr() const noexcept { return error_ ? &error_.value() : nullptr; }

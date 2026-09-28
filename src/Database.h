@@ -146,18 +146,18 @@ class Database {
             !r) {
           return r.error();
         }
-        auto [currentMapSize, err] = GetEnvMapSize(env.get()).into_options();
-        if (err) {
-          return Err{err};
-        }
-        mapSize = std::max(mapSize, *currentMapSize);
-        if (mapSize > MAX_MAP_SIZE) {
-          return Err{"Database full"};
-        }
-        if (const auto rc = check_lmdb_ok(
-                mdb_env_copy2(source.get(), work.path.string().c_str(), 0));
-            !rc) {
-          return Err{"Failed to copy prior save to active work directory"};
+        if (const auto currentMapSize = GetEnvMapSize(env.get())) {
+          mapSize = std::max(mapSize, *currentMapSize);
+          if (mapSize > MAX_MAP_SIZE) {
+            return Err{"Database full"};
+          }
+          if (const auto rc = check_lmdb_ok(
+                  mdb_env_copy2(source.get(), work.path.string().c_str(), 0));
+              !rc) {
+            return Err{"Failed to copy prior save to active work directory"};
+          }
+        } else {
+          return currentMapSize.error();
         }
       }
       env = OpenLMDB(work.path, mapSize, false);
@@ -283,11 +283,14 @@ class Database {
     auto txn = BeginTxn(env, true);
     auto lmdbKey = View(key);
     MDB_val value{};
-    if (const auto rc = check_lmdb_ok(mdb_get(txn.get(), instance_->data, &lmdbKey, &value)); !rc) {
+    if (const auto rc = check_lmdb_ok(
+            mdb_get(txn.get(), instance_->data, &lmdbKey, &value));
+        !rc) {
       if (rc.error().code == MDB_NOTFOUND) {
         return Ok{false};
       }
-      return Err{"Failed to check if database contains key {}. {}", key, rc.error()};
+      return Err{"Failed to check if database contains key {}. {}", key,
+                 rc.error()};
     }
     return Ok{true};
   }
@@ -371,7 +374,10 @@ class Database {
   }
 
   _NODISCARD bool IsReady() const { return ready_; }
-  void Shutdown();
+  void Shutdown() {
+    instance_.reset();
+    ready_ = false;
+  }
 
  private:
   fs::path root_;
