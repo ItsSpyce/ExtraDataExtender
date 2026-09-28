@@ -29,7 +29,7 @@ class StreamImpl final : public SerializationStream {
   explicit StreamImpl(const std::string_view input)
       : input_(input), isReading_(true) {}
 
-  bool WriteRecordData(void* buffer, uint32_t length) const override {
+  bool WriteRecordData(const void* buffer, uint32_t length) const override {
     if (isReading_) {
       logger::error("Cannot write to reading stream");
       didFail_ = true;
