@@ -139,12 +139,7 @@ inline Connection Connect() noexcept {
   if (!query) return {nullptr, EDE_IncompatibleVersion};
   const auto* api = query(abi::InterfaceVersion);
 #endif
-  if (!api || api->version != abi::InterfaceVersion ||
-      api->size < sizeof(abi::IPluginInterfaceV1) || !api->RegisterDataType ||
-      !api->Exists || !api->RefrHasExtraData || !api->RefrAddExtraData ||
-      !api->RefrGetExtraData || !api->RefrRemoveExtraData ||
-      !api->ItemHasExtraData || !api->ItemAddExtraData ||
-      !api->ItemGetExtraData || !api->ItemRemoveExtraData)
+  if (!api || api->version != abi::InterfaceVersion)
     return {nullptr, EDE_IncompatibleVersion};
   return {api, EDE_Ok};
 }
