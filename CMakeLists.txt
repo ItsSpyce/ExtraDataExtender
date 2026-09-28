@@ -54,8 +54,6 @@ add_subdirectory(${CommonLibPath} EXCLUDE_FROM_ALL)
 add_subdirectory("${CMAKE_LIB_DIR}/emhash" EXCLUDE_FROM_ALL)
 
 find_package(spdlog CONFIG REQUIRED)
-find_package(imgui CONFIG REQUIRED)
-find_path(SIMPLEINI_INCLUDE_DIRS "ConvertUTF.c")
 find_package(unofficial-lmdb CONFIG REQUIRED)
 
 include_directories(
@@ -71,7 +69,6 @@ target_precompile_headers(${PROJECT_NAME} PRIVATE src/PCH.h)
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)
 target_link_libraries(${PROJECT_NAME} PRIVATE
   spdlog::spdlog
-  imgui::imgui
   emhash
   glaze::glaze
   unofficial::lmdb::lmdb

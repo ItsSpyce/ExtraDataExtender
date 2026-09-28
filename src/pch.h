@@ -5,7 +5,6 @@
 #include <RE/Skyrim.h>
 #include <REX/REX.h>
 #include <SKSE/SKSE.h>
-#include <SimpleIni.h>
 
 #include "STL.h"
 
@@ -14,6 +13,8 @@ using namespace std::literals;
 
 using NativeUID = decltype(RE::ExtraUniqueID::uniqueID);
 using uid_t = uint64_t;
+
+#define NATIVE_UID_MAX UINT16_MAX
 
 namespace fs = std::filesystem;
 

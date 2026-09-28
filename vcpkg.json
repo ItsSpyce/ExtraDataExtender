@@ -4,16 +4,8 @@
   "dependencies": [
     "fmt",
     "spdlog",
-    "simpleini",
-    "catch2",
-    "rapidcsv",
-    "rsm-binary-io",
     "directxtk",
-    {
-      "name": "imgui",
-      "features": [ "dx11-binding", "win32-binding" ],
-      "version>=": "1.91.8"
-    },
-    "lmdb"
+    "lmdb",
+    "rapidcsv"
   ]
 }

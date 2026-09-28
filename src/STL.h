@@ -44,6 +44,59 @@ constexpr auto enum_range(auto first, auto last) {
           [](auto enumVal) { return (decltype(first))enumVal; });
   return enumRange;
 }
+
+// I simply want the std functions part of the members fam
+template <class _Variant, class _Ty>
+struct is_in_variant;
+
+template <class _Ty, class... _Types>
+struct is_in_variant<std::variant<_Types...>, _Ty>
+    : std::disjunction<std::is_same<_Ty, _Types>...> {};
+
+template <class _Variant, class _Ty>
+constexpr bool is_in_variant_v = is_in_variant<_Variant, _Ty>::value;
+
+template <class... _Types>
+class better_variant final : public std::variant<_Types...> {
+  using inner_type = std::variant<_Types...>;
+
+ public:
+  better_variant(inner_type& value) : std::variant<_Types...>(value) {}
+
+  template <class _Ty>
+    requires is_in_variant_v<inner_type, _Ty>
+  constexpr better_variant(_Ty&& value) : std::variant<_Types...>(value) {}
+
+  template <class _Ty>
+    requires is_in_variant_v<inner_type, _Ty>
+  constexpr bool holds_alternative() const noexcept {
+    return std::holds_alternative<_Ty, _Types...>(&this);
+  }
+
+  template <class _Ty>
+    requires is_in_variant_v<inner_type, _Ty>
+  constexpr decltype(auto) get_if() noexcept {
+    return std::get_if<_Ty, _Types...>(this);
+  }
+
+  template <class _Ty>
+    requires is_in_variant_v<inner_type, _Ty>
+  constexpr decltype(auto) get_if() const noexcept {
+    return std::get_if<_Ty, _Types...>(this);
+  }
+
+  template <class _Ty>
+    requires is_in_variant_v<inner_type, _Ty>
+  constexpr decltype(auto) get() noexcept {
+    return std::get<_Ty, _Types...>(&this);
+  }
+
+  template <class _Ty>
+    requires is_in_variant_v<inner_type, _Ty>
+  constexpr decltype(auto) get() const noexcept {
+    return std::get<_Ty, _Types...>(&this);
+  }
+};
 }  // namespace stl
 
 template <typename T>
@@ -55,6 +108,11 @@ struct Ok {
     requires(std::is_constructible_v<T, U &&>)
       : value(std::forward<U>(v)) {}
 };
+
+template <>
+struct Ok<void> {};
+
+Ok() -> Ok<void>;
 
 template <std::size_t N>
 Ok(const char (&)[N]) -> Ok<std::string>;
@@ -91,9 +149,19 @@ struct Err {
   Err(const std::optional<Err>& rhs) : message(rhs->message), code(rhs->code) {}
   Err(std::optional<Err>& rhs) : message(rhs->message), code(rhs->code) {}
 
-  auto operator<=>(const Err&) const = default;
-  bool operator==(const Err& rhs) const { return message == rhs.message; }
-  bool operator!=(const Err& rhs) const { return message != rhs.message; }
+  bool IsNone() const noexcept { return code == INT32_MIN; }
+
+  bool IsNone() noexcept { return code == INT32_MIN; }
+
+  auto operator<=>(const Err&) const noexcept = default;
+  bool operator==(const Err& rhs) const noexcept {
+    return message == rhs.message && code == rhs.code;
+  }
+  bool operator!=(const Err& rhs) const noexcept { return !(*this == rhs); }
+
+  explicit operator bool() noexcept { return !IsNone(); }
+
+  explicit operator bool() const noexcept { return !IsNone(); }
 };
 
 #ifdef FMT_VERSION
@@ -206,23 +274,31 @@ class _NODISCARD result {
     return err(error());
   }
 
-  value_lval value_or(T other) const & {
+  value_lval value_or(T other) const& {
     if (is_ok()) {
       return value();
     }
     return other;
   }
 
-  value_rval value_or(T other) const && {
+  value_rval value_or(T other) const&& {
     if (is_ok()) {
       return value();
     }
     return other;
   }
 
-  auto operator->() const { return value(); }
+  constexpr const T* operator->() const noexcept { return value(); }
 
-  auto operator->() { return value(); }
+  constexpr T* operator->() noexcept { return value(); }
+
+  constexpr const T& operator*() const& noexcept { return value(); }
+
+  constexpr T& operator*() & noexcept { return value(); }
+
+  constexpr const T&& operator*() const&& noexcept { return value(); }
+
+  constexpr T&& operator*() && noexcept { return value(); }
 
   auto into_options() && {
     using options_type = std::pair<std::optional<T>, std::optional<Err>>;
@@ -249,6 +325,44 @@ struct fmt::formatter<result<T>> : formatter<string_view> {
   }
 };
 #endif
+
+// result<void> specialization
+template <>
+class _NODISCARD result<void> {
+ public:
+  using value_type = void;
+  using error_type = Err;
+
+  result(Ok<void>) noexcept : error_(std::nullopt) {}
+  result(Err&& error) : error_(std::move(error)) {}
+  result(const Err& error) : error_(error) {}
+
+  [[nodiscard]] bool is_ok() const noexcept { return !error_.has_value(); }
+  [[nodiscard]] bool is_err() const noexcept { return error_.has_value(); }
+  explicit operator bool() const noexcept { return is_ok(); }
+
+  void value() const {
+    if (error_) throw std::bad_variant_access();
+  }
+
+  Err& error() & { return *error_; }
+  const Err& error() const& { return error_; }
+  Err&& error() && { return std::move(error_); }
+
+  Err* error_ptr() noexcept { return error_ ? &error_.value() : nullptr; }
+  const Err* error_ptr() const noexcept { return error_ ? &error_.value() : nullptr; }
+
+  void assert_ok() const { assert(is_ok()); }
+
+  template <typename Match>
+  auto match(const std::function<Match()>& ok,
+             const std::function<Match(const Err&)>& error) const noexcept {
+    return is_ok() ? ok() : error(error_);
+  }
+
+ private:
+  std::optional<Err> error_;
+};
 
 template <typename T>
 struct std::tuple_size<result<T>> : std::integral_constant<size_t, 2> {};
