@@ -27,7 +27,8 @@ inline constexpr EDE_StatusCode EDE_IncompatibleVersion = 6;
 
 class SerializationStream {
  public:
-  virtual bool WriteRecordData(void* buffer, std::uint32_t length) const = 0;
+  virtual bool WriteRecordData(const void* buffer,
+                               std::uint32_t length) const = 0;
   virtual std::uint32_t ReadRecordData(void* buffer,
                                        std::uint32_t length) const = 0;
 
@@ -44,7 +45,7 @@ class SerializationStream {
     requires(std::is_trivially_copyable_v<T> && !std::is_pointer_v<T> &&
              !std::is_member_pointer_v<T> && !std::is_const_v<T>)
   std::uint32_t ReadRecordData(T& value) const {
-    static_assert(sizeof(T) <= UINT32_MAX);
+    static_assert(sizeof(T) <= (std::numeric_limits<std::uint32_t>::max)());
     return ReadRecordData(std::addressof(value),
                           static_cast<std::uint32_t>(sizeof(T)));
   }
