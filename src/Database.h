@@ -107,38 +107,42 @@ class Database {
 
   struct Instance {
     Env env{nullptr, mdb_env_close};
-    fs::path dir;
+    const fs::path& root;
+    fs::path workingDir{};
     MDB_dbi meta{}, data{};
 
-    Instance(const fs::path& dir) : dir(std::move(dir)) {}
+    Instance(const fs::path& dir) : root(dir) {}
     ~Instance() { Close(); }
     DONOTMOVEITMOVEIT(Instance);
 
-    void Close() noexcept {
+    void Close() {
       env.reset();
-      fsp::rm_dir(dir);
-      dir.clear();
+      fsp::rm_dir(workingDir);
+      workingDir.clear();
     }
 
-    result<bool> Grow() const noexcept {
-      auto [currentMapSize, err] = GetEnvMapSize(env.get()).into_options();
-      if (err) {
-        return Err{"Failed to read LMDB env info. {}", *err};
+    result<bool> Grow() const {
+      if (const auto currentMapSize = GetEnvMapSize(env.get())) {
+        if (*currentMapSize >= MAX_MAP_SIZE) return Ok{false};
+        const auto size = std::min(*currentMapSize * 2, MAX_MAP_SIZE);
+        if (const auto rc = check_lmdb_ok(mdb_env_set_mapsize(env.get(), size));
+            !rc) {
+          return Err{"Failed to set map size. {}", rc.error()};
+        }
+        return Ok{true};
+      } else {
+        return Err{"Failed to read LMDB env info. {}", currentMapSize.error()};
       }
-      if (currentMapSize >= MAX_MAP_SIZE) return Ok{false};
-      const auto size = std::min(*currentMapSize * 2, MAX_MAP_SIZE);
-      if (const auto rc = check_lmdb_ok(mdb_env_set_mapsize(env.get(), size));
-          !rc) {
-        return Err{"Failed to set map size. {}", rc.error()};
-      }
-      return Ok{true};
     }
 
-    result<void> Start(const std::string& saveName) noexcept {
+    result<void> Start(const std::string& saveName) {
+      workingDir = root / ".temp";
+      logger::info("Root dir: {}; working dir: {}", root.string(),
+                   workingDir.string());
       auto mapSize = INITIAL_MAP_SIZE;
-      fsp::TempDir work{fsp::reinit_dir(dir / ".temp")};
+      fsp::TempDir dir{fsp::reinit_dir(workingDir)};
       if (!saveName.empty()) {
-        const auto sourcePath = dir / "saves" / saveName;
+        const auto sourcePath = root / "saves" / saveName;
         auto source = OpenLMDB(sourcePath, INITIAL_MAP_SIZE, true);
         MDB_dbi sourceMeta{}, sourceData{};
         if (const auto r =
@@ -152,7 +156,7 @@ class Database {
             return Err{"Database full"};
           }
           if (const auto rc = check_lmdb_ok(
-                  mdb_env_copy2(source.get(), work.path.string().c_str(), 0));
+                  mdb_env_copy2(source.get(), dir.path.string().c_str(), 0));
               !rc) {
             return Err{"Failed to copy prior save to active work directory"};
           }
@@ -160,8 +164,8 @@ class Database {
           return currentMapSize.error();
         }
       }
-      env = OpenLMDB(work.path, mapSize, false);
-      dir = work.GetAndRelease();
+      env = OpenLMDB(dir.path, mapSize, false);
+      workingDir = dir.GetAndRelease();
       try {
         for (;;) {
           if (const auto rc =
@@ -190,8 +194,8 @@ class Database {
       if (const auto rc = check_lmdb_ok(mdb_env_sync(env.get(), 1)); !rc) {
         return Err{"Failed to sync save {}. {}", name, rc.error()};
       }
-      fs::create_directories(dir / "saves");
-      fsp::TempDir pending{fsp::reinit_dir(dir / ".pending")};
+      fs::create_directories(workingDir / "saves");
+      fsp::TempDir pending{fsp::reinit_dir(workingDir / ".pending")};
       if (const auto rc = check_lmdb_ok(
               mdb_env_copy2(env.get(), pending.path.string().c_str(), 0));
           !rc) {
@@ -204,7 +208,8 @@ class Database {
         }
         auto saveNameInstance = OpenLMDB(pending.path, *currentMapSize, true);
         MDB_dbi copiedMeta{}, copiedData{};
-        if (const auto rc = GetTables(env.get(), false, copiedMeta, copiedData);
+        if (const auto rc = GetTables(saveNameInstance.get(), false, copiedMeta,
+                                      copiedData);
             !rc) {
           return Err{"Failed to get save tables. {}", rc.error()};
         }
@@ -213,8 +218,9 @@ class Database {
           !result) {
         return Err{"Failed to flush save's temp directory. {}", result.error()};
       }
-      if (const auto result = fsp::replace_file(
-              pending.path, dir / "saves" / name, dir / ".backup");
+      if (const auto result =
+              fsp::replace_file(pending.path, workingDir / "saves" / name,
+                                workingDir / ".backup");
           !result) {
         return Err{"Failed to replace save contents with working directory. {}",
                    result.error()};
@@ -236,10 +242,10 @@ class Database {
   }
   ~Database() { Shutdown(); }
 
-  result<void> Write(const std::vector<Mutation>& changes) noexcept {
+  result<void> Write(const std::vector<Mutation>& changes) {
     if (!ready_) return Err{"EDE not ready"};
     auto* env = instance_->env.get();
-    const auto txn = BeginTxn(env, false);
+    auto txn = BeginTxn(env, false);
     for (const auto& [key, value] : changes) {
       if (key.empty() || key.size() > mdb_env_get_maxkeysize(env)) {
         return Err{"Invalid key. {}", key};
@@ -271,6 +277,8 @@ class Database {
         }
       }
     }
+
+    CommitTxn(txn);
     return Ok{};
   }
 
@@ -308,7 +316,7 @@ class Database {
             mdb_get(txn.get(), instance_->data, &lmdbKey, &value));
         !rc) {
       if (rc.error().code == MDB_NOTFOUND) {
-        return Err{"Value not found for key {}", key};
+        return Err{MDB_NOTFOUND, "Value not found for key {}", key};
       }
       return Err{"Failed to read value for key {}. {}", key, rc.error()};
     }
@@ -316,13 +324,17 @@ class Database {
         std::string{static_cast<const char*>(value.mv_data), value.mv_size}};
   }
 
-  result<void> NewGame() noexcept {
+  result<void> NewGame() {
     if (const auto result = Reset(); !result) {
-      return result.error();
+      return Err{"Failed to reset database. {}", result.error()};
     }
-    const auto startResult = instance_->Start("");
-    ready_ = true;
-    return startResult;
+    if (const auto startResult = instance_->Start("")) {
+      logger::info("Successfully created database");
+      ready_ = true;
+      return Ok{};
+    } else {
+      return Err{"Failed to start database. {}", startResult.error()};
+    }
   }
 
   result<void> Load(const std::string& saveFile) {
@@ -333,12 +345,14 @@ class Database {
       return Err{"Invalid argument (saveFile): {}", saveFile};
     }
     if (fs::exists(root_ / "saves" / saveFile)) {
+      logger::info("Previous save database found, loading");
       if (const auto result = instance_->Start(saveFile); !result) {
         return result.error();
       }
       ready_ = true;
       return Ok{};
     }
+    logger::info("No save found, starting fresh");
     return NewGame();
   }
 
@@ -353,7 +367,9 @@ class Database {
   }
 
   result<void> Reset() {
-    instance_->Close();
+    if (instance_) {
+      instance_->Close();
+    }
     ready_ = false;
     return Ok{};
   }

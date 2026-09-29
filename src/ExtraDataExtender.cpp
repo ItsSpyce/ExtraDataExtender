@@ -36,34 +36,12 @@ void ReportError(const Err& err, const std::string& additionalContext) {
   }
 }
 
-thread_local bool entered = false;
-template <class _Func, typename _Ty = std::invoke_result_t<_Func>>
-auto Guard(_Ty failure, _Func&& op) noexcept {
-  if (entered) {
-    return failure;
-  }
-  try {
-    if (State::GetSingleton()->GetIDStore().IsEntered()) {
-      return failure;
-    }
-    struct Scope {
-      Scope() { entered = true; }
-      ~Scope() { entered = false; }
-
-      DONOTMOVEITMOVEIT(Scope);
-    } scope;
-    return op();
-  } catch (...) {
-    return failure;
-  }
-}
-
 uid_t Resolve(const RE::TESObjectREFR* refr) {
-  if (!ProcessPending()) {
+  if (!IDSolver::ProcessPending()) {
     logger::error("Attempted to resolve unique ID when not ready");
     return NULL;
   }
-  if (const auto uid = ParseUniqueID(refr)) {
+  if (const auto uid = IDSolver::ParseUniqueID(refr)) {
     return uid.value();
   } else {
     ReportError(uid.error(), "Failed to resolve unique ID for refr: {}");
@@ -72,11 +50,11 @@ uid_t Resolve(const RE::TESObjectREFR* refr) {
 }
 
 uid_t Resolve(const RE::TESObjectREFR* refr, const RE::ExtraDataList* stack) {
-  if (!ProcessPending()) {
+  if (!IDSolver::ProcessPending()) {
     logger::error("Attempted to resolve unique ID when not ready");
     return NULL;
   }
-  if (const auto uid = ParseUniqueID(refr, stack)) {
+  if (const auto uid = IDSolver::ParseUniqueID(refr, stack)) {
     return uid.value();
   } else {
     ReportError(uid.error(), "Failed to resolve unique ID: {}");
@@ -86,11 +64,11 @@ uid_t Resolve(const RE::TESObjectREFR* refr, const RE::ExtraDataList* stack) {
 
 uid_t Resolve(const RE::TESObjectREFR* owner, const RE::TESBoundObject* obj,
               const RE::ExtraDataList* stack) {
-  if (!ProcessPending()) {
+  if (!IDSolver::ProcessPending()) {
     logger::error("Attempted to resolve unique ID when not ready");
     return NULL;
   }
-  if (const auto uid = ParseUniqueID(owner, obj, stack)) {
+  if (const auto uid = IDSolver::ParseUniqueID(owner, obj, stack)) {
     return uid.value();
   } else {
     ReportError(uid.error(), "Failed to resolve unique ID: {}");

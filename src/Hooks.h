@@ -1,24 +1,24 @@
 #pragma once
 
-#include "UniqueID.h"
+#include "IDSolver.h"
 
 namespace ExtraDataExtender::Hooks {
 template <class T>
   requires std::is_base_of_v<RE::TESObjectREFR, T>
 struct Lifecycle {
   static RE::NiAVObject* Load(T* ref, bool background) {
-    const auto* node = LoadFunc(ref, background);
+    auto* node = LoadFunc(ref, background);
     if (node) {
-      UniqueID::BeginTrackingRefr(ref->GetFormID());
+      IDSolver::BeginTrackingRefr(ref);
     } else {
-      UniqueID::StopTrackingRefr(ref->GetFormID());
+      IDSolver::StopTrackingRefr(ref->GetFormID());
     }
     return node;
   }
 
   static void Unload(T* ref) {
     UnloadFunc(ref);
-    UniqueID::StopTrackingRefr(ref->GetFormID());
+    IDSolver::StopTrackingRefr(ref->GetFormID());
   }
 
   static RE::ObjectRefHandle Remove(T* owner, RE::TESBoundObject* obj,
@@ -34,7 +34,7 @@ struct Lifecycle {
                              position, rotation);
     if (!destination && nativeUID != NULL && count > 0) {
       if (const auto world = result.get()) {
-        UniqueID::OnDropped(owner->GetFormID(), obj ? obj->GetFormID() : NULL,
+        IDSolver::OnDropped(owner->GetFormID(), obj ? obj->GetFormID() : NULL,
                             nativeUID, world.get());
       }
     }
@@ -50,7 +50,7 @@ struct Lifecycle {
     auto result = DropFunc(owner, obj, list, count, position, rotation);
     if (nativeUID != NULL && count > 0) {
       if (const auto world = result.get()) {
-        UniqueID::OnDropped(owner->GetFormID(), obj ? obj->GetFormID() : NULL,
+        IDSolver::OnDropped(owner->GetFormID(), obj ? obj->GetFormID() : NULL,
                             nativeUID, world.get());
       }
     }
@@ -59,7 +59,7 @@ struct Lifecycle {
 
   static void Pickup(T* owner, RE::TESObjectREFR* world, int32_t count,
                      bool arg3, bool playSound) {
-    UniqueID::PickupCtx ctx{owner, world, count};
+    PickupCtx ctx{owner, world, count};
     PickupFunc(owner, world, count, arg3, playSound);
   }
 

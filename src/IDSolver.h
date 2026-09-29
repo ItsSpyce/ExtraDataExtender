@@ -364,6 +364,24 @@ class IDSolver {
   bool Dirty() const { return dirty_; }
   void MarkClean() { dirty_ = false; }
 
+  static void RegisterEvents();
+  static void OnDropped(RE::FormID owner, RE::FormID obj, NativeUID nativeUID,
+                        RE::TESObjectREFR* world);
+  static void Reset();
+  static void Resume();
+  static result<void> PrepareSave();
+  static void FinishSave();
+  static result<void> ProcessPending();
+  static void BeginTrackingRefr(RE::TESObjectREFR* refr);
+  static void StopTrackingRefr(RE::FormID form);
+
+  static result<uid_t> ParseUniqueID(const RE::TESObjectREFR* target);
+  static result<uid_t> ParseUniqueID(const RE::TESObjectREFR* owner,
+                                     const RE::TESBoundObject* obj,
+                                     const RE::ExtraDataList* stack);
+  static result<uid_t> ParseUniqueID(const RE::TESObjectREFR* owner,
+                                     const RE::ExtraDataList* stack);
+
  private:
   struct UniqueRecord {
     uid_t id;
@@ -394,22 +412,4 @@ class PickupCtx {
  private:
   PickupCtx* previous_{};
 };
-
-void RegisterEvents();
-void OnDropped(RE::FormID owner, RE::FormID obj, NativeUID nativeUID,
-               RE::TESObjectREFR* world);
-void Reset();
-void Resume();
-result<void> PrepareSave();
-void FinishSave();
-result<void> ProcessPending();
-void BeginTrackingRefr(RE::TESObjectREFR* refr);
-void StopTrackingRefr(RE::FormID form);
-
-result<uid_t> ParseUniqueID(const RE::TESObjectREFR* target);
-result<uid_t> ParseUniqueID(const RE::TESObjectREFR* owner,
-                            const RE::TESBoundObject* obj,
-                            const RE::ExtraDataList* stack);
-result<uid_t> ParseUniqueID(const RE::TESObjectREFR* owner,
-                            const RE::ExtraDataList* stack);
 }  // namespace ExtraDataExtender

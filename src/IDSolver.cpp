@@ -585,14 +585,14 @@ void OnDropped(std::uint32_t owner, std::uint32_t object, NativeUID native,
                                       .native = native,
                                       .count = 0});
 }
-void RegisterEvents() {
+void IDSolver::RegisterEvents() {
   auto* events = RE::ScriptEventSourceHolder::GetSingleton();
   events->AddEventSink<RE::TESUniqueIDChangeEvent>(&g_coordinator);
   events->AddEventSink<RE::TESContainerChangedEvent>(&g_coordinator);
   events->AddEventSink<RE::TESFormDeleteEvent>(&g_coordinator);
 }
-void Reset() { g_coordinator.Reset(); }
-void Resume() {
+void IDSolver::Reset() { g_coordinator.Reset(); }
+void IDSolver::Resume() {
   if (!State::GetSingleton()->GetDb().IsReady()) return;
   g_coordinator.Start();
   // some references exist before the load serialization happens, i.e. menu/load
@@ -606,17 +606,29 @@ void Resume() {
   if (auto* player = RE::PlayerCharacter::GetSingleton(); player->Is3DLoaded())
     BeginTrackingRefr(player);
 }
-result<void> PrepareSave() { return g_coordinator.PrepareSave(); }
-void FinishSave() { g_coordinator.FinishSave(); }
-result<void> ProcessPending() { return g_coordinator.ProcessPending(); }
-void BeginTrackingRefr(RE::TESObjectREFR* refr) {
+result<void> IDSolver::PrepareSave() { return g_coordinator.PrepareSave(); }
+void IDSolver::FinishSave() { g_coordinator.FinishSave(); }
+result<void> IDSolver::ProcessPending() {
+  return g_coordinator.ProcessPending();
+}
+void IDSolver::BeginTrackingRefr(RE::TESObjectREFR* refr) {
   if (refr)
     g_coordinator.Queue(
         Load{.handle = refr->GetHandle(), .form = refr->GetFormID()});
 }
-void StopTrackingRefr(RE::FormID form) { g_coordinator.Queue(Unload{form}); }
+void IDSolver::StopTrackingRefr(RE::FormID form) {
+  g_coordinator.Queue(Unload{form});
+}
 
-result<uid_t> ParseUniqueID(const RE::TESObjectREFR* target) {
+void IDSolver::OnDropped(RE::FormID owner, RE::FormID obj, NativeUID nativeUID,
+                         RE::TESObjectREFR* world) {
+  if (world && world->GetBaseObject()->GetFormID() == obj) {
+    g_coordinator.Queue(
+        WorldTransfer{owner, NULL, obj, world->GetFormID(), nativeUID, 0});
+  }
+}
+
+result<uid_t> IDSolver::ParseUniqueID(const RE::TESObjectREFR* target) {
   if (!target || target->IsDeleted() || !target->GetBaseObject()) {
     return Err{EDE_InvalidArgument, "Invalid target"};
   }
@@ -685,8 +697,8 @@ static result<uid_t> ParseInventoryItem(const RE::TESObjectREFR* owner,
   return Ok{id};
 }
 
-result<uid_t> ParseUniqueID(const RE::TESObjectREFR* owner,
-                            const RE::ExtraDataList* stack) {
+result<uid_t> IDSolver::ParseUniqueID(const RE::TESObjectREFR* owner,
+                                      const RE::ExtraDataList* stack) {
   if (!owner || owner->IsDeleted()) {
     return Err{EDE_InvalidArgument, "Invalid owner"};
   }
@@ -709,9 +721,9 @@ result<uid_t> ParseUniqueID(const RE::TESObjectREFR* owner,
   return Err{EDE_InvalidArgument, "Owner failed validation check"};
 }
 
-result<uid_t> ParseUniqueID(const RE::TESObjectREFR* owner,
-                            const RE::TESBoundObject* obj,
-                            const RE::ExtraDataList* stack) {
+result<uid_t> IDSolver::ParseUniqueID(const RE::TESObjectREFR* owner,
+                                      const RE::TESBoundObject* obj,
+                                      const RE::ExtraDataList* stack) {
   return ParseInventoryItem(owner, obj, stack, true);
 }
 }  // namespace ExtraDataExtender

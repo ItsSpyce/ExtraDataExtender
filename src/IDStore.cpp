@@ -244,15 +244,15 @@ result<void> IDStore::Register(const char* id, const unsigned version,
     return Err{EDE_InvalidArgument, "A constructor must return a unique value"};
   }
   Obj prototype{raw, Destructor{dtor}};
-  if (const auto* actual = prototype->GetID();
+  if (const auto* actual = prototype->ID();
       !actual || std::string_view(actual) != id) {
     return Err{EDE_InvalidArgument, "ID mismatch found. Expected {} but got {}",
                id, actual};
   }
-  if (prototype->GetVersion() != version) {
+  if (prototype->Version() != version) {
     return Err{EDE_InvalidArgument,
                "Version mismatch found. Expected {} but got {}", version,
-               prototype->GetVersion()};
+               prototype->Version()};
   }
   kinds_.emplace(id, Kind{.version = version,
                           .ctor = ctor,
@@ -291,9 +291,9 @@ result<bool> IDStore::Add(uid_t target, ExtraData* data) {
     return Err{EDE_InvalidArgument, "Expected non-null extra data"};
   }
   ReentryGuard guard{isEntered_};
-  const auto* id = data->GetID();
-  FIND_IN(kinds_, data->GetID()) {
-    if (it->second.version != data->GetVersion()) {
+  const auto* id = data->ID();
+  FIND_IN(kinds_, data->ID()) {
+    if (it->second.version != data->Version()) {
       return Err{
           EDE_InvalidArgument,
           "Version mismatch between the registered type and the passed type"};
@@ -316,7 +316,7 @@ result<bool> IDStore::Add(uid_t target, ExtraData* data) {
     }
   }
   return Err{EDE_InvalidArgument,
-             "Definition for extra data with ID {} not found", data->GetID()};
+             "Definition for extra data with ID {} not found", data->ID()};
 }
 
 result<ExtraData*> IDStore::Get(uid_t target, const char* id) {

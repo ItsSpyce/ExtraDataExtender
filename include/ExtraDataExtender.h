@@ -1,7 +1,11 @@
 #pragma once
 
 #ifndef ExtraDataAPI
+#ifdef EDE_BUILD_HOST
+#define ExtraDataAPI __declspec(dllexport)
+#else
 #define ExtraDataAPI
+#endif
 #endif
 
 #include <RE/E/ExtraDataList.h>
@@ -11,9 +15,19 @@
 #include <string>
 #include <type_traits>
 
+/// <summary>
+///   Shared header file for interaction with ExtraDataExtender
+/// </summary>
 namespace ExtraDataExtender {
+/// <summary>
+///   The mod name. This is stable.
+/// </summary>
 inline constexpr auto PLUGIN_NAME = L"ExtraDataExtender.dll";
 
+/// <summary>
+///   A status code type returned by the ABI layer. Translates directly to result status codes
+///   from ABI calls.
+/// </summary>
 using EDE_StatusCode = std::int32_t;
 inline constexpr EDE_StatusCode EDE_Ok = 0;
 inline constexpr EDE_StatusCode EDE_NotInstalled = 1;
@@ -25,10 +39,25 @@ inline constexpr EDE_StatusCode EDE_IncompatibleVersion = 6;
 
 #define EDE_SUCCESS(rc) ((rc) == ::ExtraDataExtender::EDE_Ok)
 
+/// <summary>
+///   Binary stream for (de)serialization of ExtraData
+/// </summary>
 class SerializationStream {
  public:
+  /// <summary>
+  ///   Serializes data to the buffer
+  /// </summary>
+  /// <param name="buffer">The raw byte array to commit to the stream</param>
+  /// <param name="length">The length of the content to write</param>
+  /// <returns>Success or not</returns>
   virtual bool WriteRecordData(const void* buffer,
                                std::uint32_t length) const = 0;
+  /// <summary>
+  ///   Deserializes part of the buffer into a value
+  /// </summary>
+  /// <param name="buffer">The target to read to</param>
+  /// <param name="length">The length of the content to read</param>
+  /// <returns>Success or not</returns>
   virtual std::uint32_t ReadRecordData(void* buffer,
                                        std::uint32_t length) const = 0;
 
@@ -57,9 +86,36 @@ class SerializationStream {
 class ExtraData {
  public:
   virtual ~ExtraData() = default;
-  virtual unsigned GetVersion() = 0;
-  virtual const char* GetID() = 0;
+  /// <summary>
+  ///   The version of the ExtraData. This is to be unique per ID. It is recommended
+  ///   to increment when struct/class layout is changed. Runtime changes are checked
+  ///   against and not supported.
+  /// </summary>
+  /// <returns></returns>
+  virtual unsigned Version() const = 0;
+  /// <summary>
+  ///   The ID of the ExtraData. This it to be unique across all mods. This is to remain
+  ///   static and is what is checked against when parsing persisted data. Runtime changes
+  ///   are checked against and not supported.
+  /// </summary>
+  /// <returns></returns>
+  virtual const char* ID() const = 0;
+  /// <summary>
+  ///   Call to deserialize the ExtraData from a binary stream.
+  /// </summary>
+  /// <remarks>
+  ///   Streams must be fully read to the end. If any data is left over, EDE will return an
+  ///   error after Read is called. Read what you write.
+  /// </remarks>
+  /// <param name="stream">A pointer to the stream used for reading. Null checks are not necessary.</param>
+  /// <param name="savedVersion">The version the data was saved with.</param>
+  /// <returns>Success</returns>
   virtual bool Read(SerializationStream* stream, unsigned savedVersion) = 0;
+  /// <summary>
+  ///   Call to serialize the ExtraData to a binary stream.
+  /// </summary>
+  /// <param name="stream">A pointer to the stream used for writing. Null checks are not necessary.</param>
+  /// <returns>Success</returns>
   virtual bool Write(SerializationStream* stream) = 0;
 
  protected:
@@ -140,46 +196,105 @@ inline Connection Connect() noexcept {
   if (!query) return {nullptr, EDE_IncompatibleVersion};
   const auto* api = query(abi::InterfaceVersion);
 #endif
-  if (!api || api->version != abi::InterfaceVersion)
+  if (!api || api->version != abi::InterfaceVersion ||
+      api->size < sizeof(abi::IPluginInterfaceV1))
     return {nullptr, EDE_IncompatibleVersion};
   return {api, EDE_Ok};
 }
 }  // namespace internal
 
+/// <summary>
+///   Returns a connection status to ExtraDataExtender
+/// </summary>
+/// <returns></returns>
 inline EDE_StatusCode GetStatus() noexcept {
   return internal::Connect().status;
 }
+/// <summary>
+///   Whether ExtraDataExtender is installed
+/// </summary>
+/// <returns>if GetStatus == EDE_Ok</returns>
 inline bool IsInstalled() noexcept { return EDE_SUCCESS(GetStatus()); }
+/// <summary>
+///   Registers a data type to EDE
+/// </summary>
+/// <param name="id">The unique identifier of the type</param>
+/// <param name="version">The version tied to the identifier</param>
+/// <param name="create">The constructor. Expected to be parameter-less</param>
+/// <param name="destroy">The destructor</param>
+/// <returns></returns>
 inline EDE_StatusCode RegisterDataType(const char* id, const unsigned version,
                                        const abi::Create create,
                                        const abi::Destroy destroy) noexcept {
   const auto [api, status] = internal::Connect();
   return api ? api->RegisterDataType(id, version, create, destroy) : status;
 }
+/// <summary>
+///   Checks to see if a custom data type is registered with the given params
+/// </summary>
+/// <param name="id">The unique identifier of the type</param>
+/// <param name="version">The version tied to the identifier</param>
+/// <returns>True if found, false if not or error</returns>
 inline bool Exists(const char* id, const unsigned version) noexcept {
   const auto [api, _] = internal::Connect();
   return api && id && *id && api->Exists(id, version);
 }
+
+// Note: each function below has its own checks on the nullability of values. You
+// are free to check yourself but validity is handled on EDE's side.
+
+/// <summary>
+///   Checks if a reference has an entry of this data type
+/// </summary>
+/// <param name="owner"></param>
+/// <param name="id">The data type unique identifier</param>
+/// <returns>True if found, found if not or error</returns>
 inline bool RefrHasExtraData(const RE::TESObjectREFR* owner,
                              const char* id) noexcept {
   const auto [api, _] = internal::Connect();
   return api ? api->RefrHasExtraData(owner, id) : false;
 }
+/// <summary>
+///   Attempts to add extra data to a reference
+/// </summary>
+/// <param name="owner"></param>
+/// <param name="data">A pointer to the extra data instance</param>
+/// <returns>True if valid and added, else false</returns>
 inline bool RefrAddExtraData(const RE::TESObjectREFR* owner,
                              ExtraData* data) noexcept {
   const auto [api, _] = internal::Connect();
   return api ? api->RefrAddExtraData(owner, data) : false;
 }
+/// <summary>
+///   Attempts to get extra data for a reference
+/// </summary>
+/// <param name="owner"></param>
+/// <param name="id">The data type unique identifier</param>
+/// <returns>A pointer to the data if found and valid, else null</returns>
 inline ExtraData* RefrGetExtraData(const RE::TESObjectREFR* owner,
                                    const char* id) noexcept {
   const auto [api, _] = internal::Connect();
   return api ? api->RefrGetExtraData(owner, id) : nullptr;
 }
+/// <summary>
+///   Attempts to remove extra data from a reference
+/// </summary>
+/// <param name="owner"></param>
+/// <param name="id">The data type unique identifier</param>
+/// <returns>True if found and removed, else false</returns>
 inline bool RefrRemoveExtraData(const RE::TESObjectREFR* owner,
                                 const char* id) noexcept {
   const auto [api, _] = internal::Connect();
   return api ? api->RefrRemoveExtraData(owner, id) : false;
 }
+/// <summary>
+///   Checks if an item has extra data
+/// </summary>
+/// <param name="owner">The inventory item owner</param>
+/// <param name="object">The inventory item object</param>
+/// <param name="instance">The inventory item's <c>RE::ExtraDataList*</c></param>
+/// <param name="id">The data type unique identifier</param>
+/// <returns>True if found and valid, else false</returns>
 inline bool ItemHasExtraData(const RE::TESObjectREFR* owner,
                              const RE::TESBoundObject* object,
                              const RE::ExtraDataList* instance,
@@ -187,6 +302,14 @@ inline bool ItemHasExtraData(const RE::TESObjectREFR* owner,
   const auto [api, _] = internal::Connect();
   return api ? api->ItemHasExtraData(owner, object, instance, id) : false;
 }
+/// <summary>
+///   Attempts to add extra data to an item
+/// </summary>
+/// <param name="owner">The inventory item owner</param>
+/// <param name="object">The inventory item object</param>
+/// <param name="instance">The inventory item's <c>RE::ExtraDataList*</c></param>
+/// <param name="data">A pointer to the extra data</param>
+/// <returns>True if found and valid, else false</returns>
 inline bool ItemAddExtraData(const RE::TESObjectREFR* owner,
                              const RE::TESBoundObject* object,
                              const RE::ExtraDataList* instance,
@@ -194,6 +317,14 @@ inline bool ItemAddExtraData(const RE::TESObjectREFR* owner,
   const auto [api, status] = internal::Connect();
   return api ? api->ItemAddExtraData(owner, object, instance, data) : false;
 }
+/// <summary>
+///   Attempts to get extra data for an item
+/// </summary>
+/// <param name="owner">The inventory item owner</param>
+/// <param name="object">The inventory item object</param>
+/// <param name="instance">The inventory item's <c>RE::ExtraDataList*</c></param>
+/// <param name="id">The data type unique identifier</param>
+/// <returns>A pointer to the data if found, else null</returns>
 inline ExtraData* ItemGetExtraData(const RE::TESObjectREFR* owner,
                                    const RE::TESBoundObject* object,
                                    const RE::ExtraDataList* instance,
@@ -201,6 +332,14 @@ inline ExtraData* ItemGetExtraData(const RE::TESObjectREFR* owner,
   const auto [api, _] = internal::Connect();
   return api ? api->ItemGetExtraData(owner, object, instance, id) : nullptr;
 }
+/// <summary>
+///   Attempts to remove extra data from an item
+/// </summary>
+/// <param name="owner">The inventory item owner</param>
+/// <param name="object">The inventory item object</param>
+/// <param name="instance">The inventory item's <c>RE::ExtraDataList*</c></param>
+/// <param name="id">The data type unique identifier</param>
+/// <returns>True if valid and removed, else false</returns>
 inline bool ItemRemoveExtraData(const RE::TESObjectREFR* owner,
                                 const RE::TESBoundObject* object,
                                 const RE::ExtraDataList* instance,
@@ -231,6 +370,11 @@ const TypeInfo& Info() {
 }
 }  // namespace internal
 
+/// <summary>
+///   Registers a custom extra data type
+/// </summary>
+/// <typeparam name="T"></typeparam>
+/// <returns></returns>
 template <ExtraDataType T>
 _NODISCARD EDE_StatusCode Register() noexcept {
   try {
@@ -252,6 +396,12 @@ _NODISCARD EDE_StatusCode Register() noexcept {
   }
 }
 
+/// <summary>
+///   Checks to see if a custom data type is registered with the given params
+/// </summary>
+/// <param name="version">The version tied to the identifier</param>
+/// <typeparam name="T"></typeparam>
+/// <returns>True if found, false if not or error</returns>
 template <ExtraDataType T>
 bool Exists(const unsigned version) noexcept {
   try {
@@ -260,6 +410,12 @@ bool Exists(const unsigned version) noexcept {
     return false;
   }
 }
+
+/// <summary>
+///   Checks to see if a custom data type is registered with the given params
+/// </summary>
+/// <typeparam name="T"></typeparam>
+/// <returns></returns>
 template <ExtraDataType T>
 bool Exists() noexcept {
   try {
@@ -270,6 +426,12 @@ bool Exists() noexcept {
   }
 }
 
+/// <summary>
+///   Checks if a reference has an extra data type matching
+/// </summary>
+/// <typeparam name="T"></typeparam>
+/// <param name="reference"></param>
+/// <returns>True if valid and found, else false</returns>
 template <ExtraDataType T>
 bool RefrHasExtraData(const RE::TESObjectREFR* reference) noexcept {
   if (!reference) return false;
@@ -281,6 +443,13 @@ bool RefrHasExtraData(const RE::TESObjectREFR* reference) noexcept {
   }
 }
 
+/// <summary>
+///   Attempts to add custom extra data to a reference
+/// </summary>
+/// <typeparam name="T"></typeparam>
+/// <param name="reference"></param>
+/// <param name="data"></param>
+/// <returns>True if valid and added, else false</returns>
 template <ExtraDataType T>
 _NODISCARD bool RefrAddExtraData(const RE::TESObjectREFR* reference,
                                  T* data) noexcept {
@@ -288,6 +457,12 @@ _NODISCARD bool RefrAddExtraData(const RE::TESObjectREFR* reference,
   return RefrAddExtraData(reference, static_cast<ExtraData*>(data));
 }
 
+/// <summary>
+///   Attempts to get extra data from a reference
+/// </summary>
+/// <typeparam name="T"></typeparam>
+/// <param name="reference"></param>
+/// <returns>A pointer to the extra data if valid and found, else null</returns>
 template <ExtraDataType T>
 T* RefrGetExtraData(const RE::TESObjectREFR* reference) noexcept {
   if (!reference) return nullptr;
@@ -299,6 +474,12 @@ T* RefrGetExtraData(const RE::TESObjectREFR* reference) noexcept {
   }
 }
 
+/// <summary>
+///   Attempts to remove extra data from a reference
+/// </summary>
+/// <typeparam name="T"></typeparam>
+/// <param name="reference"></param>
+/// <returns>True if found and removed, else false</returns>
 template <ExtraDataType T>
 _NODISCARD bool RefrRemoveExtraData(
     const RE::TESObjectREFR* reference) noexcept {
@@ -310,10 +491,18 @@ _NODISCARD bool RefrRemoveExtraData(
   }
 }
 
+/// <summary>
+///   Checks if an item has extra data
+/// </summary>
+/// <typeparam name="T"></typeparam>
+/// <param name="owner">The inventory owner</param>
+/// <param name="object">The inventory item</param>
+/// <param name="instance">The inventory item <c>RE::ExtraDataList*</c></param>
+/// <returns>True if valid and found, else false</returns>
 template <ExtraDataType T>
 bool ItemHasExtraData(const RE::TESObjectREFR* owner,
                       const RE::TESBoundObject* object,
-                      const T* instance) noexcept {
+                      const RE::ExtraDataList* instance) noexcept {
   try {
     return ExtraDataExtender::ItemHasExtraData(owner, object, instance,
                                                internal::Info<T>().id.c_str());
@@ -322,6 +511,44 @@ bool ItemHasExtraData(const RE::TESObjectREFR* owner,
   }
 }
 
+/// <summary>
+///   Checks if an item has extra data. Checks only the first non-null and non-empty
+///   <c>RE::ExtraDataList*</c>
+/// </summary>
+/// <typeparam name="T"></typeparam>
+/// <param name="owner">The inventory owner</param>
+/// <param name="object">The inventory item</param>
+/// <returns>True if valid and found, else false</returns>
+template <ExtraDataType T>
+bool ItemHasExtraData(const RE::TESObjectREFR* owner,
+                      const RE::TESBoundObject* object) noexcept {
+  try {
+    if (const auto* changes =
+            const_cast<RE::TESObjectREFR*>(owner)->GetInventoryChanges(true);
+        changes && changes->entryList) {
+      for (const auto* entry : *changes->entryList) {
+        for (const auto* extraList : *entry->extraLists) {
+          if (extraList && extraList->GetCount() > 0) {
+            return ItemHasExtraData<T>(owner, object, extraList);
+          }
+        }
+      }
+    }
+    return false;
+  } catch (...) {
+    return false;
+  }
+}
+
+/// <summary>
+///   Attempts to add extra data to an item
+/// </summary>
+/// <typeparam name="T"></typeparam>
+/// <param name="owner">The inventory owner</param>
+/// <param name="object">The inventory object</param>
+/// <param name="instance">The inventory's <c>RE::ExtraDataList*</c></param>
+/// <param name="data">The data to add</param>
+/// <returns>True if found and valid, else false</returns>
 template <ExtraDataType T>
 bool ItemAddExtraData(const RE::TESObjectREFR* owner,
                       const RE::TESBoundObject* object,
@@ -335,15 +562,14 @@ bool ItemAddExtraData(const RE::TESObjectREFR* owner,
 }
 
 /// <summary>
-///   A convenience method for adding to an item. It will use only the FIRST
-///   ExtraDataList entry. If you want to add to a specific one, use the default
-///   overload.
+///   Attempts to add extra data to an item. Checks only the first non-null and non-empty
+///   <c>RE::ExtraDataList*</c>
 /// </summary>
 /// <typeparam name="T"></typeparam>
-/// <param name="owner"></param>
-/// <param name="object"></param>
-/// <param name="data"></param>
-/// <returns></returns>
+/// <param name="owner">The inventory owner</param>
+/// <param name="object">The inventory object</param>
+/// <param name="data">The inventory's <c>RE::ExtraDataList*</c></param>
+/// <returns>True if found and valid, else false</returns>
 template <ExtraDataType T>
 bool ItemAddExtraData(const RE::TESObjectREFR* owner,
                       const RE::TESBoundObject* object, T* data) noexcept {
@@ -366,6 +592,14 @@ bool ItemAddExtraData(const RE::TESObjectREFR* owner,
   }
 }
 
+/// <summary>
+///   Attempts to get extra data for an item
+/// </summary>
+/// <typeparam name="T"></typeparam>
+/// <param name="owner">The inventory owner</param>
+/// <param name="object">The inventory object</param>
+/// <param name="instance">The inventory's <c>RE::ExtraDataList*</c></param>
+/// <returns>A pointer to the extra data if found and valid, else null</returns>
 template <ExtraDataType T>
 T* ItemGetExtraData(const RE::TESObjectREFR* owner,
                     const RE::TESBoundObject* object,
@@ -379,14 +613,13 @@ T* ItemGetExtraData(const RE::TESObjectREFR* owner,
 }
 
 /// <summary>
-///   A convenience method for getting ExtraData from an item. It will only read
-///   from the FIRST ExtraDataList entry. If you want to query from a specific
-///   one, use the default overload.
+///   Attempts to get extra data for an item. Checks only the first non-null and non-empty
+///   <c>RE::ExtraDataList*</c>
 /// </summary>
 /// <typeparam name="T"></typeparam>
-/// <param name="owner"></param>
-/// <param name="object"></param>
-/// <returns></returns>
+/// <param name="owner">The inventory owner</param>
+/// <param name="object">The inventory object</param>
+/// <returns>A pointer to the extra data if found and valid, else null</returns>
 template <ExtraDataType T>
 T* ItemGetExtraData(const RE::TESObjectREFR* owner,
                     const RE::TESBoundObject* object) noexcept {
@@ -409,6 +642,14 @@ T* ItemGetExtraData(const RE::TESObjectREFR* owner,
   }
 }
 
+/// <summary>
+///   Attempts to remove extra data from an item
+/// </summary>
+/// <typeparam name="T"></typeparam>
+/// <param name="owner">The inventory owner</param>
+/// <param name="object">The inventory object</param>
+/// <param name="instance">The inventory's <c>RE::ExtraDataList*</c></param>
+/// <returns>True if found and valid, else false</returns>
 template <ExtraDataType T>
 bool ItemRemoveExtraData(const RE::TESObjectREFR* owner,
                          const RE::TESBoundObject* object,
@@ -422,14 +663,13 @@ bool ItemRemoveExtraData(const RE::TESObjectREFR* owner,
 }
 
 /// <summary>
-///   A convenience method for removing ExtraData from an item. It will only
-///   read from the FIRST ExtraDataList entry. If you want to remove from a
-///   specific one, use the default overload.
+///   Attempts to remove extra data from an item. Checks only the first non-null and non-empty
+///   <c>RE::ExtraDataList*</c>
 /// </summary>
 /// <typeparam name="T"></typeparam>
-/// <param name="owner"></param>
-/// <param name="object"></param>
-/// <returns></returns>
+/// <param name="owner">The inventory owner</param>
+/// <param name="object">The inventory object</param>
+/// <returns>True if found and valid, else false</returns>
 template <ExtraDataType T>
 bool ItemRemoveExtraData(const RE::TESObjectREFR* owner,
                          const RE::TESBoundObject* object) noexcept {
@@ -452,6 +692,11 @@ bool ItemRemoveExtraData(const RE::TESObjectREFR* owner,
   }
 }
 
+/// <summary>
+///   Registers a data type
+/// </summary>
+/// <typeparam name="T"></typeparam>
+/// <returns></returns>
 template <ExtraDataType T>
 _NODISCARD EDE_StatusCode RegisterDataType() noexcept {
   return Register<T>();

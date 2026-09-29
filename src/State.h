@@ -18,19 +18,40 @@ class State : public Singleton<State> {
   };
 
  public:
-  State() { db_ = std::make_unique<Database>(SAVE_PATH); }
-  ~State() { db_.release(); }
-
   DONOTMOVEITMOVEIT(State);
 
-  result<void> Load(const std::string& saveName) noexcept {
+  State() {
+    db_ = std::make_unique<Database>(SAVE_PATH);
+    SKSE::GetSerializationInterface()->SetRevertCallback(
+        [](SKSE::SerializationInterface*) {
+          IDSolver::Reset();
+          auto* self = GetSingleton();
+          if (self->Preloaded()) {
+            self->FinishOutgoingRevert();
+          } else {
+            if (const auto reset = self->Reset()) {
+              logger::info("Successfully reset");
+            } else {
+              logger::info("Failed to revert state: {}", reset.error());
+            }
+          }
+        });
+  }
+  ~State() { db_.release(); }
+
+  result<void> Load(const std::string& saveName) {
     ClearSession();
     // AI could never
     if (const auto loaded = db_->Load(saveName)) {
+      logger::info("Loaded LMDB");
       if (const auto ledger = db_->Read("ede/identities/v1")) {
+        logger::info("Retrieved ledger from LMDB");
         if (const auto decoded = idSolver_.Decode(ledger.value())) {
+          logger::info("Successfully decoded ledger");
           if (const auto forms = db_->Read("ede/forms/v1")) {
+            logger::info("Successfully loaded cached form IDs");
             if (const auto loadedForms = formIDs_.Decode(*forms)) {
+              logger::info("Successfully decoded cached form IDs");
               if (const auto remapped = idSolver_.RemapForms(
                       [this](const auto saved, auto& current) {
                         if (const auto resolved = formIDs_.Resolve(saved)) {
@@ -39,6 +60,7 @@ class State : public Singleton<State> {
                         }
                         return false;
                       })) {
+                logger::info("Successfully remapped form IDs");
                 phase_ = Phase::kPreloaded;
                 return Ok{};
               } else {
@@ -69,7 +91,7 @@ class State : public Singleton<State> {
     }
   }
 
-  result<void> NewGame() noexcept {
+  result<void> NewGame() {
     ClearSession();
     if (const auto result = db_->NewGame()) {
       return Ok{};
@@ -78,7 +100,7 @@ class State : public Singleton<State> {
     }
   }
 
-  result<void> Save(const std::string& saveName) const noexcept {
+  result<void> Save(const std::string& saveName) const {
     if (const auto result = db_->Save(saveName); !result) {
       return Err{"Failed to save to LMDB. {}", result.error()};
     }
@@ -127,12 +149,14 @@ class State : public Singleton<State> {
       return Ok{};
     }
     if (const auto forms = formIDs_.Encode(idSolver_.Forms())) {
-      if (const auto result = db_->Write({{"ede/identities/v1", idSolver_.Encode()},
-                                      {"ede/forms/v1", forms.value()}})) {
+      if (const auto result =
+              db_->Write({{"ede/identities/v1", idSolver_.Encode()},
+                          {"ede/forms/v1", forms.value()}})) {
         idSolver_.MarkClean();
         return Ok{};
       } else {
-        return Err{"Failed to commit remapped forms to LMDB. {}", result.error()};
+        return Err{"Failed to commit remapped forms to LMDB. {}",
+                   result.error()};
       }
     } else {
       return Err{"Failed to encode form ID mappings. {}", forms.error()};
