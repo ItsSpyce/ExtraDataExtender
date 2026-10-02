@@ -5,18 +5,21 @@
 #include "Helpers.h"
 #include "StringReader.h"
 #include "StringWriter.h"
+#include "UniqueID.h"
 
 namespace ExtraDataExtender {
 class IDSolver {
   static Err NullParamErr(const std::string_view paramName) {
     return Err{Err_NullValue, "Invalid param ({}), got NULL", paramName};
   }
+  static constexpr unsigned char SCHEMA_VERSION = 1;
+  static constexpr unsigned short HEADER_MAGIC = 'EDEI';
 
  public:
   using NativeKey = std::pair<uid_t, NativeUID>;
   using FormResolver = std::function<bool(RE::FormID, RE::FormID&)>;
 
-  enum Error {
+  enum Error : uint8_t {
     Err_Generic,
     Err_InvalidParam,
     Err_DataMismatch,
@@ -49,7 +52,7 @@ class IDSolver {
   }
 
   result<uid_t> Item(uid_t owner, NativeUID nativeUID, RE::FormID obj) {
-    if (owner == NULL) {
+    if (owner == UID_NONE) {
       return NullParamErr("owner");
     }
     if (nativeUID == NULL) {
@@ -81,7 +84,7 @@ class IDSolver {
                    it->second.obj};
       }
       if (from == to) return Ok{};
-      if (to.first == NULL) {
+      if (to.first == UID_NONE) {
         return Err{Err_NullValue, "Invalid anchor: uid_t"};
       }
       if (to.second == NULL) {
@@ -165,21 +168,21 @@ class IDSolver {
     FIND_IN(refs_, form) {
       return it->second.obj != obj ? NULL : it->second.obj;
     }
-    return NULL;
+    return UID_NONE;
   }
 
   _NODISCARD uid_t FindItem(NativeKey key, RE::FormID obj = 0) const {
     FIND_IN(items_, key) {
       return it->second.obj != obj ? NULL : it->second.obj;
     }
-    return NULL;
+    return UID_NONE;
   }
 
   _NODISCARD uid_t FindItem(RE::FormID owner, NativeUID nativeUID) const {
     if (const auto refrUID = FindReference(owner)) {
       return FindItem({refrUID, nativeUID});
     }
-    return NULL;
+    return UID_NONE;
   }
 
   void ForgetReference(const RE::FormID form) {
@@ -266,8 +269,8 @@ class IDSolver {
 
   std::string Encode() const {
     StringWriter writer;
-    writer.Write("EDEI")
-        .Write(1, 4)
+    writer.Write(HEADER_MAGIC)
+        .Write(SCHEMA_VERSION)
         .Write(next_)
         .Write(refs_.size())
         .Write(items_.size());
@@ -289,35 +292,36 @@ class IDSolver {
   result<void> Decode(std::string_view bytes) {
     IDSolver replacement;
     StringReader reader{bytes};
-    if (reader.ReadString(4) != "EDEI") {
+    if (reader.ReadUShort() != HEADER_MAGIC) {
       return Err{Err_DataMismatch, "Invalid identity header"};
     }
-    if (const auto schemaVersion = reader.ReadByte(); schemaVersion == 1) {
-      replacement.next_ = reader.ReadULong();
+    if (const auto schemaVersion = reader.ReadByte(); schemaVersion == SCHEMA_VERSION) {
+      replacement.next_ = reader.ReadUID();
       const auto refrCount = reader.ReadULong();
       const auto itemCount = reader.ReadULong();
-      if (replacement.next_ == NULL) {
+      if (replacement.next_ == UID_NONE) {
         return Err{Err_NullValue,
                    "Got invalid registry next value, expected non-null"};
       }
       std::set<uid_t> ids;
       const auto isValidID = [replacement, &ids](const uid_t id) {
-        return id != NULL && id < replacement.next_ && ids.insert(id).second;
+        return id != UID_NONE && id < replacement.next_ &&
+               ids.insert(id).second;
       };
       for (size_t i = 0; i < refrCount; ++i) {
         const auto form = reader.ReadUInt();
-        const auto id = reader.ReadULong();
+        const auto uid = reader.ReadUID();
         const auto obj = reader.ReadUInt();
-        if (form == NULL || obj == NULL || !isValidID(id)) {
+        if (form == NULL || obj == NULL || !isValidID(uid)) {
           return Err{Err_Generic, "Invalid reference record ({}, {}, {})", form,
-                     id, obj};
+                     uid, obj};
         }
-        replacement.owners_.insert(id);
+        replacement.owners_.insert(uid);
       }
       for (size_t i = 0; i < itemCount; ++i) {
-        const auto owner = reader.ReadULong();
+        const auto owner = reader.ReadUID();
         const auto nativeUID = reader.ReadUShort();
-        const auto id = reader.ReadULong();
+        const auto id = reader.ReadUID();
         const auto obj = reader.ReadUInt();
         if (replacement.owners_.contains(owner)) {
           return Err{Err_Generic, "Duplicate owner found: {}", owner};
@@ -388,7 +392,7 @@ class IDSolver {
     RE::FormID obj;
   };
   result<uid_t> Allocate();
-  uid_t next_ = 1;
+  uid_t next_ = 1U;
   emhash7::HashMap<RE::FormID, UniqueRecord> refs_;
   emhash7::HashMap<RE::FormID, std::set<uid_t>> loaded_;
   std::set<uid_t> owners_;

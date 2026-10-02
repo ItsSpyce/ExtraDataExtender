@@ -12,7 +12,6 @@ namespace logger = SKSE::log;
 using namespace std::literals;
 
 using NativeUID = decltype(RE::ExtraUniqueID::uniqueID);
-using uid_t = uint64_t;
 
 #define NATIVE_UID_MAX UINT16_MAX
 

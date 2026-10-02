@@ -45,6 +45,17 @@ constexpr auto enum_range(auto first, auto last) {
   return enumRange;
 }
 
+template <typename... Args>
+struct function_traits;
+
+template <typename _Return, typename... Args>
+struct function_traits<_Return(Args...)> {
+  using return_type = _Return;
+  using parameter_types = std::tuple<Args...>;
+  template <size_t _Idx>
+  using parameter_type = std::tuple_element<_Idx, parameter_types>;
+};
+
 // I simply want the std functions part of the members fam
 template <class _Variant, class _Ty>
 struct is_in_variant;
@@ -182,26 +193,26 @@ class _NODISCARD result {
   std::variant<T, Err> data_;
 
  public:
-  using value_type = T;
-  using value_p = T*;
-  using value_lval = T&;
-  using value_rval = T&&;
+  using value_type = std::decay_t<T>;
+  using value_pointer = T*;
   using error_type = std::string;
 
   template <typename U>
   result(Ok<U>&& ok)
-    requires(std::is_constructible_v<T, U &&>)
+    requires(std::is_constructible_v<value_type, U &&>)
       : data_(std::in_place_index<0>, std::forward<U>(ok.value)) {}
   template <typename U>
   result(const Ok<U>& ok)
-    requires(std::is_constructible_v<T, const U&>)
+    requires(std::is_constructible_v<value_type, const U&>)
       : data_(std::in_place_index<0>, ok.value) {}
   result(Err&& err) : data_(std::in_place_index<1>, std::move(err)) {}
   result(const Err& err) : data_(std::in_place_index<1>, err) {}
 
-  value_p value_ptr() noexcept { return std::get_if<0>(&data_); }
+  value_pointer value_ptr() noexcept { return std::get_if<0>(&data_); }
 
-  const T* value_ptr() const noexcept { return std::get_if<0>(&data_); }
+  const value_type* value_ptr() const noexcept {
+    return std::get_if<0>(&data_);
+  }
 
   Err* error_ptr() noexcept { return std::get_if<1>(&data_); }
 
@@ -243,11 +254,11 @@ class _NODISCARD result {
 
   explicit operator bool() const noexcept { return is_ok(); }
 
-  value_lval value() & { return std::get<0>(data_); }
+  value_type value() & { return std::get<0>(data_); }
 
   const T& value() const& { return std::get<0>(data_); }
 
-  T&& value() && { return std::get<0>(std::move(data_)); }
+  value_type value() && { return std::get<0>(std::move(data_)); }
 
   Err& error() & { return std::get<1>(data_); }
 
@@ -255,12 +266,26 @@ class _NODISCARD result {
 
   Err&& error() && { return std::get<1>(std::move(data_)); }
 
+  value_type& expect() const& {
+    if (is_ok()) {
+      return value();
+    }
+    throw std::runtime_error("Expected result to have value");
+  }
+
+  value_type&& expect() && {
+    if (is_ok()) {
+      return value();
+    }
+    throw std::runtime_error("Expected result to have value");
+  }
+
   void assert_ok() & { assert(is_ok()); }
 
   void assert_ok() && { assert(is_ok()); }
 
   template <typename _Match>
-  auto match(const std::function<_Match(value_lval)>& ok,
+  auto match(const std::function<_Match(value_type&)>& ok,
              const std::function<_Match(const Err&)>& err) noexcept {
     if (is_ok()) {
       return ok(value());
@@ -269,7 +294,7 @@ class _NODISCARD result {
   }
 
   template <typename _Match>
-  auto match(const std::function<_Match(value_lval)>& ok,
+  auto match(const std::function<_Match(value_type&)>& ok,
              const std::function<_Match(const Err&)>& err) const noexcept {
     if (is_ok()) {
       return ok(value());
@@ -277,33 +302,42 @@ class _NODISCARD result {
     return err(error());
   }
 
-  value_lval value_or(T other) const& {
+  value_type value_or(value_type other) const& {
     if (is_ok()) {
-      return value();
+      return std::get<0>(data_);
     }
-    return other;
+    return std::move(other);
   }
 
-  value_rval value_or(T other) const&& {
+  value_type value_or(value_type other) && {
     if (is_ok()) {
-      return value();
+      return std::get<0>(std::move(data_));
     }
-    return other;
+    return std::move(other);
   }
 
-  constexpr const T* operator->() const noexcept {
+  value_type value_or(value_type other) const&& {
+    if (is_ok()) {
+      return std::get<0>(data_);
+    }
+    return std::move(other);
+  }
+
+  constexpr const value_type* operator->() const noexcept {
     return std::addressof(value());
   }
 
-  constexpr T* operator->() noexcept { return std::addressof(value()); }
+  constexpr value_type* operator->() noexcept {
+    return std::addressof(value());
+  }
 
-  constexpr const T& operator*() const& noexcept { return value(); }
+  constexpr const value_type& operator*() const& noexcept { return value(); }
 
-  constexpr T& operator*() & noexcept { return value(); }
+  constexpr value_type& operator*() & noexcept { return value(); }
 
-  constexpr const T&& operator*() const&& noexcept { return value(); }
+  constexpr const value_type&& operator*() const&& noexcept { return value(); }
 
-  constexpr T&& operator*() && noexcept { return value(); }
+  constexpr value_type&& operator*() && noexcept { return value(); }
 
   auto into_options() && {
     using options_type = std::pair<std::optional<T>, std::optional<Err>>;
@@ -355,7 +389,9 @@ class _NODISCARD result<void> {
   Err&& error() && { return std::move(error_.value()); }
 
   Err* error_ptr() noexcept { return error_ ? &error_.value() : nullptr; }
-  const Err* error_ptr() const noexcept { return error_ ? &error_.value() : nullptr; }
+  const Err* error_ptr() const noexcept {
+    return error_ ? &error_.value() : nullptr;
+  }
 
   void assert_ok() const { assert(is_ok()); }
 

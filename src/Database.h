@@ -245,40 +245,40 @@ class Database {
   result<void> Write(const std::vector<Mutation>& changes) {
     if (!ready_) return Err{"EDE not ready"};
     auto* env = instance_->env.get();
-    auto txn = BeginTxn(env, false);
-    for (const auto& [key, value] : changes) {
-      if (key.empty() || key.size() > mdb_env_get_maxkeysize(env)) {
-        return Err{"Invalid key. {}", key};
-      }
-      auto lmdbKey = View(key);
-      if (value.has_value()) {
-        auto lmdbValue = View(*value);
-        if (const auto putResult = check_lmdb_ok(
-                mdb_put(txn.get(), instance_->data, &lmdbKey, &lmdbValue, 0));
-            !putResult) {
-          if (putResult.error().code != MDB_MAP_FULL || !instance_->Grow()) {
+    for (;;) {
+      auto txn = BeginTxn(env, false);
+      for (const auto& [key, value] : changes) {
+        if (key.empty() || key.size() > mdb_env_get_maxkeysize(env)) {
+          return Err{"Invalid key. {}", key};
+        }
+        auto lmdbKey = View(key);
+        if (value.has_value()) {
+          auto lmdbValue = View(*value);
+          if (const auto putResult = check_lmdb_ok(
+                  mdb_put(txn.get(), instance_->data, &lmdbKey, &lmdbValue, 0));
+              !putResult) {
+            if (putResult.error().code == MDB_MAP_FULL && instance_->Grow()) {
+              // cancels the current transaction by exiting the closest
+              // for-loop, letting us try again
+              break;
+            }
             ready_ = false;
             return Err{"Failed to put record into database. {}",
                        putResult.error()};
           }
-          // try it again :D
-          if (!check_lmdb_ok(mdb_put(txn.get(), instance_->data, &lmdbKey,
-                                     &lmdbValue, 0))) {
-            ready_ = false;
-            return Err{"Failed to put record into database after growing"};
+        } else {
+          if (const auto delResult = check_lmdb_ok(
+                  mdb_del(txn.get(), instance_->data, &lmdbKey, nullptr));
+              !delResult) {
+            return Err{"Failed to delete record from database. {}",
+                       delResult.error()};
           }
         }
-      } else {
-        if (const auto delResult = check_lmdb_ok(
-                mdb_del(txn.get(), instance_->data, &lmdbKey, nullptr));
-            !delResult) {
-          return Err{"Failed to delete record from database. {}",
-                     delResult.error()};
-        }
       }
-    }
 
-    CommitTxn(txn);
+      CommitTxn(txn);
+      break;
+    }
     return Ok{};
   }
 

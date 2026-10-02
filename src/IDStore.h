@@ -5,6 +5,7 @@
 #include <unordered_set>
 
 #include "ExtraDataExtender.h"
+#include "UniqueID.h"
 
 namespace ExtraDataExtender {
 class IDStore final {
@@ -12,6 +13,7 @@ class IDStore final {
     unsigned version;
     abi::Create ctor;
     abi::Destroy dtor;
+    abi::IsNotEqual isNotEqual;
     std::type_index type;
   };
 
@@ -27,7 +29,7 @@ class IDStore final {
     std::size_t operator()(const Key& key) const noexcept {
       const auto first = std::hash<uid_t>{}(key.first);
       const auto second = std::hash<std::string>{}(key.second);
-      return first ^ (second + 0x9e3779b9 + (first << 6) + (first >> 2));
+      return first ^ second + 0x9e3779b9 + (first << 6) + (first >> 2);
     }
   };
   struct MissingValue {};
@@ -41,7 +43,7 @@ class IDStore final {
 
  public:
   result<void> Register(const char* id, unsigned version, abi::Create ctor,
-                        abi::Destroy dtor);
+                        abi::Destroy dtor, abi::IsNotEqual isNotEqual);
 
   result<bool> Exists(const char* id, unsigned version);
   result<bool> Has(uid_t target, const char* id);
@@ -67,13 +69,13 @@ class IDStore final {
   /// </summary>
   /// <param name="key"></param>
   /// <returns></returns>
-  result<ValueMap::iterator> FindValue(const Key& key);
+  result<ValueMap::iterator> FindState(const Key& key);
   /// <summary>
   ///   Searches for the key and loads data from LMDB
   /// </summary>
   /// <param name="key"></param>
   /// <returns></returns>
-  result<ValueMap::iterator> FindPayload(const Key& key);
+  result<ValueMap::iterator> FindAndLoad(const Key& key);
 
   result<void> Write(bool serializeAll);
 };

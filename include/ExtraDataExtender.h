@@ -25,8 +25,8 @@ namespace ExtraDataExtender {
 inline constexpr auto PLUGIN_NAME = L"ExtraDataExtender.dll";
 
 /// <summary>
-///   A status code type returned by the ABI layer. Translates directly to result status codes
-///   from ABI calls.
+///   A status code type returned by the ABI layer. Translates directly to
+///   result status codes from ABI calls.
 /// </summary>
 using EDE_StatusCode = std::int32_t;
 inline constexpr EDE_StatusCode EDE_Ok = 0;
@@ -87,16 +87,16 @@ class ExtraData {
  public:
   virtual ~ExtraData() = default;
   /// <summary>
-  ///   The version of the ExtraData. This is to be unique per ID. It is recommended
-  ///   to increment when struct/class layout is changed. Runtime changes are checked
-  ///   against and not supported.
+  ///   The version of the ExtraData. This is to be unique per ID. It is
+  ///   recommended to increment when struct/class layout is changed. Runtime
+  ///   changes are checked against and not supported.
   /// </summary>
   /// <returns></returns>
   virtual unsigned Version() const = 0;
   /// <summary>
-  ///   The ID of the ExtraData. This it to be unique across all mods. This is to remain
-  ///   static and is what is checked against when parsing persisted data. Runtime changes
-  ///   are checked against and not supported.
+  ///   The ID of the ExtraData. This it to be unique across all mods. This is
+  ///   to remain static and is what is checked against when parsing persisted
+  ///   data. Runtime changes are checked against and not supported.
   /// </summary>
   /// <returns></returns>
   virtual const char* ID() const = 0;
@@ -104,19 +104,26 @@ class ExtraData {
   ///   Call to deserialize the ExtraData from a binary stream.
   /// </summary>
   /// <remarks>
-  ///   Streams must be fully read to the end. If any data is left over, EDE will return an
-  ///   error after Read is called. Read what you write.
+  ///   Streams must be fully read to the end. If any data is left over, EDE
+  ///   will return an error after Read is called. Read what you write.
   /// </remarks>
-  /// <param name="stream">A pointer to the stream used for reading. Null checks are not necessary.</param>
-  /// <param name="savedVersion">The version the data was saved with.</param>
-  /// <returns>Success</returns>
+  /// <param name="stream">A pointer to the stream used for reading. Null checks
+  /// are not necessary.</param> <param name="savedVersion">The version the data
+  /// was saved with.</param> <returns>Success</returns>
   virtual bool Read(SerializationStream* stream, unsigned savedVersion) = 0;
   /// <summary>
   ///   Call to serialize the ExtraData to a binary stream.
   /// </summary>
-  /// <param name="stream">A pointer to the stream used for writing. Null checks are not necessary.</param>
-  /// <returns>Success</returns>
+  /// <param name="stream">A pointer to the stream used for writing. Null checks
+  /// are not necessary.</param> <returns>Success</returns>
   virtual bool Write(SerializationStream* stream) = 0;
+
+  /// <summary>
+  ///   Compares a non-null instance of extra data to this instance
+  /// </summary>
+  /// <param name="rhs"></param>
+  /// <returns>True if not equal, else false</returns>
+  virtual bool IsNotEqual(const ExtraData& rhs) = 0;
 
  protected:
   ExtraData() = default;
@@ -125,11 +132,12 @@ class ExtraData {
 namespace abi {
 using Create = ExtraData* (*)() noexcept;
 using Destroy = void (*)(ExtraData*) noexcept;
+using IsNotEqual = bool (*)(const ExtraData&) noexcept;
 
 extern "C" {
 ExtraDataAPI EDE_StatusCode RegisterDataType(const char* id, unsigned version,
-                                             Create create,
-                                             Destroy destroy) noexcept;
+                                             Create create, Destroy destroy,
+                                             IsNotEqual isNotEqual) noexcept;
 ExtraDataAPI bool Exists(const char* id, unsigned version) noexcept;
 ExtraDataAPI bool RefrHasExtraData(const RE::TESObjectREFR* reference,
                                    const char* id) noexcept;
@@ -222,12 +230,14 @@ inline bool IsInstalled() noexcept { return EDE_SUCCESS(GetStatus()); }
 /// <param name="version">The version tied to the identifier</param>
 /// <param name="create">The constructor. Expected to be parameter-less</param>
 /// <param name="destroy">The destructor</param>
+/// <param name="isNotEqual">Comparator function</param>
 /// <returns></returns>
-inline EDE_StatusCode RegisterDataType(const char* id, const unsigned version,
-                                       const abi::Create create,
-                                       const abi::Destroy destroy) noexcept {
+inline EDE_StatusCode RegisterDataType(
+    const char* id, const unsigned version, const abi::Create create,
+    const abi::Destroy destroy, const abi::IsNotEqual isNotEqual) noexcept {
   const auto [api, status] = internal::Connect();
-  return api ? api->RegisterDataType(id, version, create, destroy) : status;
+  return api ? api->RegisterDataType(id, version, create, destroy, isNotEqual)
+             : status;
 }
 /// <summary>
 ///   Checks to see if a custom data type is registered with the given params
@@ -240,8 +250,8 @@ inline bool Exists(const char* id, const unsigned version) noexcept {
   return api && id && *id && api->Exists(id, version);
 }
 
-// Note: each function below has its own checks on the nullability of values. You
-// are free to check yourself but validity is handled on EDE's side.
+// Note: each function below has its own checks on the nullability of values.
+// You are free to check yourself but validity is handled on EDE's side.
 
 /// <summary>
 ///   Checks if a reference has an entry of this data type
@@ -292,9 +302,9 @@ inline bool RefrRemoveExtraData(const RE::TESObjectREFR* owner,
 /// </summary>
 /// <param name="owner">The inventory item owner</param>
 /// <param name="object">The inventory item object</param>
-/// <param name="instance">The inventory item's <c>RE::ExtraDataList*</c></param>
-/// <param name="id">The data type unique identifier</param>
-/// <returns>True if found and valid, else false</returns>
+/// <param name="instance">The inventory item's
+/// <c>RE::ExtraDataList*</c></param> <param name="id">The data type unique
+/// identifier</param> <returns>True if found and valid, else false</returns>
 inline bool ItemHasExtraData(const RE::TESObjectREFR* owner,
                              const RE::TESBoundObject* object,
                              const RE::ExtraDataList* instance,
@@ -307,9 +317,9 @@ inline bool ItemHasExtraData(const RE::TESObjectREFR* owner,
 /// </summary>
 /// <param name="owner">The inventory item owner</param>
 /// <param name="object">The inventory item object</param>
-/// <param name="instance">The inventory item's <c>RE::ExtraDataList*</c></param>
-/// <param name="data">A pointer to the extra data</param>
-/// <returns>True if found and valid, else false</returns>
+/// <param name="instance">The inventory item's
+/// <c>RE::ExtraDataList*</c></param> <param name="data">A pointer to the extra
+/// data</param> <returns>True if found and valid, else false</returns>
 inline bool ItemAddExtraData(const RE::TESObjectREFR* owner,
                              const RE::TESBoundObject* object,
                              const RE::ExtraDataList* instance,
@@ -322,9 +332,10 @@ inline bool ItemAddExtraData(const RE::TESObjectREFR* owner,
 /// </summary>
 /// <param name="owner">The inventory item owner</param>
 /// <param name="object">The inventory item object</param>
-/// <param name="instance">The inventory item's <c>RE::ExtraDataList*</c></param>
-/// <param name="id">The data type unique identifier</param>
-/// <returns>A pointer to the data if found, else null</returns>
+/// <param name="instance">The inventory item's
+/// <c>RE::ExtraDataList*</c></param> <param name="id">The data type unique
+/// identifier</param> <returns>A pointer to the data if found, else
+/// null</returns>
 inline ExtraData* ItemGetExtraData(const RE::TESObjectREFR* owner,
                                    const RE::TESBoundObject* object,
                                    const RE::ExtraDataList* instance,
@@ -337,9 +348,9 @@ inline ExtraData* ItemGetExtraData(const RE::TESObjectREFR* owner,
 /// </summary>
 /// <param name="owner">The inventory item owner</param>
 /// <param name="object">The inventory item object</param>
-/// <param name="instance">The inventory item's <c>RE::ExtraDataList*</c></param>
-/// <param name="id">The data type unique identifier</param>
-/// <returns>True if valid and removed, else false</returns>
+/// <param name="instance">The inventory item's
+/// <c>RE::ExtraDataList*</c></param> <param name="id">The data type unique
+/// identifier</param> <returns>True if valid and removed, else false</returns>
 inline bool ItemRemoveExtraData(const RE::TESObjectREFR* owner,
                                 const RE::TESBoundObject* object,
                                 const RE::ExtraDataList* instance,
@@ -512,8 +523,8 @@ bool ItemHasExtraData(const RE::TESObjectREFR* owner,
 }
 
 /// <summary>
-///   Checks if an item has extra data. Checks only the first non-null and non-empty
-///   <c>RE::ExtraDataList*</c>
+///   Checks if an item has extra data. Checks only the first non-null and
+///   non-empty <c>RE::ExtraDataList*</c>
 /// </summary>
 /// <typeparam name="T"></typeparam>
 /// <param name="owner">The inventory owner</param>
@@ -562,8 +573,8 @@ bool ItemAddExtraData(const RE::TESObjectREFR* owner,
 }
 
 /// <summary>
-///   Attempts to add extra data to an item. Checks only the first non-null and non-empty
-///   <c>RE::ExtraDataList*</c>
+///   Attempts to add extra data to an item. Checks only the first non-null and
+///   non-empty <c>RE::ExtraDataList*</c>
 /// </summary>
 /// <typeparam name="T"></typeparam>
 /// <param name="owner">The inventory owner</param>
@@ -613,8 +624,8 @@ T* ItemGetExtraData(const RE::TESObjectREFR* owner,
 }
 
 /// <summary>
-///   Attempts to get extra data for an item. Checks only the first non-null and non-empty
-///   <c>RE::ExtraDataList*</c>
+///   Attempts to get extra data for an item. Checks only the first non-null and
+///   non-empty <c>RE::ExtraDataList*</c>
 /// </summary>
 /// <typeparam name="T"></typeparam>
 /// <param name="owner">The inventory owner</param>
@@ -663,8 +674,8 @@ bool ItemRemoveExtraData(const RE::TESObjectREFR* owner,
 }
 
 /// <summary>
-///   Attempts to remove extra data from an item. Checks only the first non-null and non-empty
-///   <c>RE::ExtraDataList*</c>
+///   Attempts to remove extra data from an item. Checks only the first non-null
+///   and non-empty <c>RE::ExtraDataList*</c>
 /// </summary>
 /// <typeparam name="T"></typeparam>
 /// <param name="owner">The inventory owner</param>

@@ -623,8 +623,12 @@ void IDSolver::StopTrackingRefr(RE::FormID form) {
 void IDSolver::OnDropped(RE::FormID owner, RE::FormID obj, NativeUID nativeUID,
                          RE::TESObjectREFR* world) {
   if (world && world->GetBaseObject()->GetFormID() == obj) {
-    g_coordinator.Queue(
-        WorldTransfer{owner, NULL, obj, world->GetFormID(), nativeUID, 0});
+    g_coordinator.Queue(WorldTransfer{.oldOwner = owner,
+                                      .newOwner = NULL,
+                                      .object = obj,
+                                      .refr = world->GetFormID(),
+                                      .native = nativeUID,
+                                      .count = 0});
   }
 }
 

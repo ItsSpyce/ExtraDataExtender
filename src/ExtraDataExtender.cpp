@@ -39,26 +39,13 @@ void ReportError(const Err& err, const std::string& additionalContext) {
 uid_t Resolve(const RE::TESObjectREFR* refr) {
   if (!IDSolver::ProcessPending()) {
     logger::error("Attempted to resolve unique ID when not ready");
-    return NULL;
+    return UID_NONE;
   }
   if (const auto uid = IDSolver::ParseUniqueID(refr)) {
     return uid.value();
   } else {
     ReportError(uid.error(), "Failed to resolve unique ID for refr: {}");
-    return NULL;
-  }
-}
-
-uid_t Resolve(const RE::TESObjectREFR* refr, const RE::ExtraDataList* stack) {
-  if (!IDSolver::ProcessPending()) {
-    logger::error("Attempted to resolve unique ID when not ready");
-    return NULL;
-  }
-  if (const auto uid = IDSolver::ParseUniqueID(refr, stack)) {
-    return uid.value();
-  } else {
-    ReportError(uid.error(), "Failed to resolve unique ID: {}");
-    return NULL;
+    return UID_NONE;
   }
 }
 
@@ -66,13 +53,13 @@ uid_t Resolve(const RE::TESObjectREFR* owner, const RE::TESBoundObject* obj,
               const RE::ExtraDataList* stack) {
   if (!IDSolver::ProcessPending()) {
     logger::error("Attempted to resolve unique ID when not ready");
-    return NULL;
+    return UID_NONE;
   }
   if (const auto uid = IDSolver::ParseUniqueID(owner, obj, stack)) {
     return uid.value();
   } else {
     ReportError(uid.error(), "Failed to resolve unique ID: {}");
-    return NULL;
+    return UID_NONE;
   }
 }
 
@@ -80,8 +67,8 @@ IDStore& IDs() { return State::GetSingleton()->GetIDStore(); }
 }  // namespace
 
 EDE_StatusCode RegisterDataType(const char* id, unsigned version, Create create,
-                                Destroy destroy) noexcept {
-  if (const auto result = IDs().Register(id, version, create, destroy)) {
+                                Destroy destroy, IsNotEqual isNotEqual) noexcept {
+  if (const auto result = IDs().Register(id, version, create, destroy, isNotEqual)) {
     return EDE_Ok;
   } else {
     ReportError(result.error(), "Failed to register custom ExtraData type");

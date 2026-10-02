@@ -18,9 +18,7 @@ namespace {
 constexpr size_t MAX_PAYLOAD = 1024ULL * 1024ULL;
 constexpr size_t MAX_ID = 128;
 
-Err ReentryErr() {
-  return Err{"PayloadStore duplicate re-entry found"};
-}
+Err ReentryErr() { return Err{"PayloadStore duplicate re-entry found"}; }
 
 // should probably change this to use StringWriter/StringReader
 class StreamImpl final : public SerializationStream {
@@ -132,16 +130,14 @@ result<std::string> TryEncode(const Envelope& envelope) {
 Database& GetDb() { return State::GetSingleton()->GetDb(); }
 }  // namespace
 
-result<IDStore::ValueMap::iterator> IDStore::FindValue(
-    const Key& key) {
-  if (key.first == NULL || !IS_VALID_ID(key.second.c_str()) ||
+result<IDStore::ValueMap::iterator> IDStore::FindState(const Key& key) {
+  if (key.first == UID_NONE || !IS_VALID_ID(key.second.c_str()) ||
       !kinds_.contains(key.second)) {
     return Err{"Invalid payload key. {} - {}", key.first, key.second};
   }
   FIND_IN(values_, key) { return Ok{it}; }
   if (const auto stored = GetDb().Contains(DB_KEY(key))) {
     if (stored.value()) {
-      
     }
     return Ok{values_
                   .emplace(key, stored.value() ? Value{PresentValue{}}
@@ -152,9 +148,8 @@ result<IDStore::ValueMap::iterator> IDStore::FindValue(
   }
 }
 
-result<IDStore::ValueMap::iterator> IDStore::FindPayload(
-    const Key& key) {
-  if (const auto located = FindValue(key)) {
+result<IDStore::ValueMap::iterator> IDStore::FindAndLoad(const Key& key) {
+  if (const auto located = FindState(key)) {
     const auto it = located.value();
     if (!it->second.holds_alternative<PresentValue>()) {
       return Ok{it};
@@ -164,6 +159,10 @@ result<IDStore::ValueMap::iterator> IDStore::FindPayload(
           PersistedValue{.bytes = bytes.value()});
       return Ok{it};
     } else {
+      if (bytes.error().code == MDB_NOTFOUND) {
+        it->second.emplace<MissingValue>(MissingValue{});
+        return Ok{it};
+      }
       return bytes.error();
     }
   } else {
@@ -171,8 +170,7 @@ result<IDStore::ValueMap::iterator> IDStore::FindPayload(
   }
 }
 
-result<void> IDStore::Write(
-                                 const bool serializeAll) {
+result<void> IDStore::Write(const bool serializeAll) {
   if (isEntered_) {
     return Err{"Can't write during callback"};
   }
@@ -218,8 +216,8 @@ result<void> IDStore::Write(
 }
 
 result<void> IDStore::Register(const char* id, const unsigned version,
-                                    const abi::Create ctor,
-                                    const abi::Destroy dtor) {
+                               const abi::Create ctor, const abi::Destroy dtor,
+                               abi::IsNotEqual isNotEqual) {
   if (isEntered_) {
     return ReentryErr();
   }
@@ -231,6 +229,9 @@ result<void> IDStore::Register(const char* id, const unsigned version,
   }
   if (!dtor) {
     return Err{EDE_InvalidArgument, "Destructor required"};
+  }
+  if (!isNotEqual) {
+    return Err{EDE_InvalidArgument, "IsNotEqual required"};
   }
   if (kinds_.contains(id)) {
     return Err{EDE_DuplicateKind, "Duplicate found with ID {}", id};
@@ -257,6 +258,7 @@ result<void> IDStore::Register(const char* id, const unsigned version,
   kinds_.emplace(id, Kind{.version = version,
                           .ctor = ctor,
                           .dtor = dtor,
+                          .isNotEqual = isNotEqual,
                           .type = typeid(*prototype)});
   return Ok{};
 }
@@ -270,13 +272,13 @@ result<bool> IDStore::Exists(const char* id, const unsigned version) {
 
 result<bool> IDStore::Has(uid_t target, const char* id) {
   if (isEntered_) return ReentryErr();
-  if (target == NULL) {
+  if (target == UID_NONE) {
     return Err{EDE_InvalidArgument, "Empty target ID"};
   }
   if (!IS_VALID_ID(id)) {
     return Err{EDE_InvalidArgument, "Invalid ID {}"};
   }
-  if (const auto result = FindValue({target, id})) {
+  if (const auto result = FindState({target, id})) {
     return Ok{!result.value()->second.holds_alternative<MissingValue>()};
   }
   return Ok{false};
@@ -284,7 +286,7 @@ result<bool> IDStore::Has(uid_t target, const char* id) {
 
 result<bool> IDStore::Add(uid_t target, ExtraData* data) {
   if (isEntered_) return ReentryErr();
-  if (target == NULL) {
+  if (target == UID_NONE) {
     return Err{EDE_InvalidArgument, "Empty target ID"};
   }
   if (!data) {
@@ -304,7 +306,17 @@ result<bool> IDStore::Add(uid_t target, ExtraData* data) {
           "Invalid type definition bound between data and the registered kind"};
     }
     const Key key{target, id};
-    if (const auto found = FindValue(key)) {
+    if (const auto found = FindState(key)) {
+      // found in database, remove from in-memory and replace
+      if (found.value()->second.holds_alternative<PresentValue>() ||
+          found.value()->second.holds_alternative<PersistedValue>()) {
+        //
+      }
+      // value currently active
+      if (found.value()->second.holds_alternative<Obj>()) {
+        //found.value()->second.emplace()
+      }
+      // not found, emplace
       if (found.value()->second.holds_alternative<MissingValue>()) {
         owned_.insert(data);
         found.value()->second.emplace<Obj>(data, Destructor{it->second.dtor});
@@ -321,7 +333,7 @@ result<bool> IDStore::Add(uid_t target, ExtraData* data) {
 
 result<ExtraData*> IDStore::Get(uid_t target, const char* id) {
   if (isEntered_) return ReentryErr();
-  if (target == NULL) {
+  if (target == UID_NONE) {
     return Err{EDE_InvalidArgument, "Empty target ID"};
   }
   if (!IS_VALID_ID(id)) {
@@ -329,7 +341,7 @@ result<ExtraData*> IDStore::Get(uid_t target, const char* id) {
   }
   const Key key{target, id};
   FIND_IN(kinds_, id) {
-    if (const auto found = FindPayload(key)) {
+    if (const auto found = FindAndLoad(key)) {
       if (const auto* obj = found.value()->second.get_if<Obj>()) {
         return Ok{obj->get()};
       }
@@ -376,12 +388,14 @@ result<ExtraData*> IDStore::Get(uid_t target, const char* id) {
 result<bool> IDStore::Remove(uid_t target, const char* id) {
   if (isEntered_) return ReentryErr();
   const Key key{target, id};
-  if (const auto found = FindValue(key); found && !found.value()->second.holds_alternative<MissingValue>()) {
-    if (const auto opResult = GetDb().Write({{DB_KEY(key), std::nullopt}}); !opResult) {
+  if (const auto found = FindState(key);
+      found && !found.value()->second.holds_alternative<MissingValue>()) {
+    if (const auto opResult = GetDb().Write({{DB_KEY(key), std::nullopt}});
+        !opResult) {
       return Ok{false};
     }
     ReentryGuard guard{isEntered_};
-    if (auto* obj = found.value()->second.get_if<Obj>()) {
+    if (const auto* obj = found.value()->second.get_if<Obj>()) {
       owned_.erase(obj->get());
     }
     values_.erase(found.value());
@@ -391,12 +405,11 @@ result<bool> IDStore::Remove(uid_t target, const char* id) {
   }
 }
 
-result<void> IDStore::Flush() {
-  return Write(true);
-}
+result<void> IDStore::Flush() { return Write(true); }
 
 result<void> IDStore::Sync(const std::set<uid_t>& loaded) {
-  std::erase_if(removeFromActive_, [&](const auto uid) { return loaded.contains(uid); });
+  std::erase_if(removeFromActive_,
+                [&](const auto uid) { return loaded.contains(uid); });
   for (const auto& [uid, _] : values_ | std::views::keys) {
     if (!loaded.contains(uid)) {
       removeFromActive_.insert(uid);

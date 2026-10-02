@@ -6,16 +6,18 @@ namespace ExtraDataExtender {
 class StringReader {
   friend class StringWriter;
 
-  template <class T> requires std::is_integral_v<T>
-  T ReadInteger() {
-    CheckSize(sizeof(T));
+  template <class T>
+    requires std::is_integral_v<T>
+  T ReadInteger(const size_t size = sizeof(T)) {
+    if (size > sizeof(T)) throw std::invalid_argument("integer size overflow");
+    CheckSize(size);
     std::uint64_t value{};
-    for (size_t i = 0; i < sizeof(T); ++i) {
+    for (size_t i = 0; i < size; ++i) {
       value |= static_cast<std::uint64_t>(
                    static_cast<unsigned char>(bytes_[position_ + i]))
                << (8 * i);
     }
-    position_ += sizeof(T);
+    position_ += size;
     return static_cast<T>(value);
   }
 
@@ -62,7 +64,9 @@ public:
   READER(int16_t, ReadShort);
   READER(int32_t, ReadInt);
   READER(int64_t, ReadLong);
-private:
+  _NODISCARD uint64_t ReadUID() { return ReadInteger<uint64_t>(6); }
+
+ private:
   std::string_view bytes_;
   std::size_t position_ = 0;
 };
