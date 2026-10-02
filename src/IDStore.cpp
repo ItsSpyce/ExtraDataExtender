@@ -6,7 +6,7 @@
 
 #define IS_VALID_ID(_ID) ((_ID) != nullptr && std::strlen(_ID) <= MAX_ID)
 #define DB_KEY(_KEY) \
-  fmt::format("ede/payload/{:016X}/{}", (_KEY).first, (_KEY).second)
+  fmt::format("ede/store/{:016X}/{}", (_KEY).first, (_KEY).second)
 
 namespace ExtraDataExtender {
 // this file utilizes error codes a lot more because most of these
@@ -18,7 +18,7 @@ namespace {
 constexpr size_t MAX_PAYLOAD = 1024ULL * 1024ULL;
 constexpr size_t MAX_ID = 128;
 
-Err ReentryErr() { return Err{"PayloadStore duplicate re-entry found"}; }
+Err ReentryErr() { return Err{"IDStore duplicate re-entry found"}; }
 
 // should probably change this to use StringWriter/StringReader
 class StreamImpl final : public SerializationStream {

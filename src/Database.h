@@ -233,6 +233,9 @@ class Database {
  public:
   using Mutation = std::pair<std::string, std::optional<std::string>>;
 
+  static constexpr auto IDENTITIES_TABLE = "ede/identities/v1";
+  static constexpr auto FORMS_TABLE = "ede/forms/v1";
+
   DONOTMOVEITMOVEIT(Database);
   Database(const fs::path& root) : root_(std::move(root)) {
     fsp::rm_dir(root / ".temp");

@@ -25,8 +25,7 @@ class State : public Singleton<State> {
     SKSE::GetSerializationInterface()->SetRevertCallback(
         [](SKSE::SerializationInterface*) {
           IDSolver::Reset();
-          auto* self = GetSingleton();
-          if (self->Preloaded()) {
+          if (auto* self = GetSingleton(); self->Preloaded()) {
             self->FinishOutgoingRevert();
           } else {
             if (const auto reset = self->Reset()) {
@@ -42,13 +41,16 @@ class State : public Singleton<State> {
   result<void> Load(const std::string& saveName) {
     ClearSession();
     // AI could never
+    // TODO: now I don't want to. We should change this to a table kind of load
+    // maybe I can make something on top of LMDB that functions a bit like
+    // EntityFramework's setup?
     if (const auto loaded = db_->Load(saveName)) {
       logger::info("Loaded LMDB");
-      if (const auto ledger = db_->Read("ede/identities/v1")) {
+      if (const auto ledger = db_->Read(Database::IDENTITIES_TABLE)) {
         logger::info("Retrieved ledger from LMDB");
         if (const auto decoded = idSolver_.Decode(ledger.value())) {
           logger::info("Successfully decoded ledger");
-          if (const auto forms = db_->Read("ede/forms/v1")) {
+          if (const auto forms = db_->Read(Database::FORMS_TABLE)) {
             logger::info("Successfully loaded cached form IDs");
             if (const auto loadedForms = formIDs_.Decode(*forms)) {
               logger::info("Successfully decoded cached form IDs");
